@@ -8,70 +8,68 @@ any watermarking implementation this way. Don't, unless you know how to sanitize
 from __future__ import annotations
 
 from typing import Final
-import subprocess
 
 from watermarking_method import (
-    InvalidKeyError,
+    PdfSource,
     SecretNotFoundError,
-    WatermarkingError,
     WatermarkingMethod,
     load_pdf_bytes,
 )
 
 
 class UnsafeBashBridgeAppendEOF(WatermarkingMethod):
-    """Toy method that appends a watermark record after the PDF EOF.
-
-    """
-
     name: Final[str] = "bash-bridge-eof"
 
-    # ---------------------
-    # Public API overrides
-    # ---------------------
-    
     @staticmethod
     def get_usage() -> str:
-        return "Toy method that appends a watermark record after the PDF EOF. Position and key are ignored."
+        return (
+            "Appends a watermark after the PDF EOF marker. "
+            "Position and key are ignored."
+        )
 
     def add_watermark(
         self,
-        pdf,
+        pdf: PdfSource,
         secret: str,
         key: str,
         position: str | None = None,
     ) -> bytes:
-        """Return a new PDF with a watermark record appended.
 
-        The ``position`` and ``key`` parameters are accepted for API compatibility but
-        ignored by this method.
-        """
         data = load_pdf_bytes(pdf)
-        cmd = "cat " + str(pdf.resolve()) + " &&  printf \"" + secret + "\""
-        
-        res = subprocess.run(cmd, shell=True, check=True, capture_output=True)
-        
-        return res.stdout
-        
+
+        if not isinstance(secret, str):
+            raise ValueError("secret must be a string")
+
+        return data + secret.encode("utf-8")
+
     def is_watermark_applicable(
         self,
         pdf: PdfSource,
         position: str | None = None,
     ) -> bool:
         return True
-    
 
-    def read_secret(self, pdf, key: str) -> str:
-        """Extract the secret if present.
-           Prints whatever there is after %EOF
-        """
-        cmd = "sed -n '1,/^\(%%EOF\|.*%%EOF\)$/!p' " + str(pdf.resolve())
-        
-        res = subprocess.run(cmd, shell=True, check=True, encoding="utf-8", capture_output=True)
-       
+    def read_secret(
+        self,
+        pdf: PdfSource,
+        key: str,
+    ) -> str:
 
-        return res.stdout
+        data = load_pdf_bytes(pdf)
 
+        marker = b"%%EOF"
+        index = data.rfind(marker)
+
+        if index == -1:
+            raise SecretNotFoundError("PDF EOF marker not found")
+
+        secret_bytes = data[index + len(marker):]
+        secret_bytes = secret_bytes.lstrip(b"\r\n")
+
+        if not secret_bytes:
+            raise SecretNotFoundError("No watermark found after EOF")
+
+        return secret_bytes.decode("utf-8")
 
 
 __all__ = ["UnsafeBashBridgeAppendEOF"]
