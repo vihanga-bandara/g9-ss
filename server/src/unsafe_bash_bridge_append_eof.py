@@ -7,13 +7,10 @@ any watermarking implementation this way. Don't, unless you know how to sanitize
 """
 from __future__ import annotations
 
-from typing import Final
 import subprocess
+from typing import Final
 
 from watermarking_method import (
-    InvalidKeyError,
-    SecretNotFoundError,
-    WatermarkingError,
     WatermarkingMethod,
     load_pdf_bytes,
 )
@@ -65,7 +62,7 @@ class UnsafeBashBridgeAppendEOF(WatermarkingMethod):
         """Extract the secret if present.
            Prints whatever there is after %EOF
         """
-        cmd = "sed -n '1,/^\(%%EOF\|.*%%EOF\)$/!p' " + str(pdf.resolve())
+        cmd = r"sed -n '1,/^\(%%EOF\|.*%%EOF\)$/!p' " + str(pdf.resolve())
         
         res = subprocess.run(cmd, shell=True, check=True, encoding="utf-8", capture_output=True)
        
