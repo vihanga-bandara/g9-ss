@@ -121,8 +121,8 @@ def create_app():
                 ).one()
         except IntegrityError:
             return jsonify({"error": "email or login already exists"}), 409
-        except Exception as e:
-            return jsonify({"error": f"database error: {e!s}"}), 503
+        except Exception:
+            return jsonify({"error": "database error"}), 503
 
         return jsonify({"id": row.id, "email": row.email, "login": row.login}), 201
 
@@ -141,8 +141,8 @@ def create_app():
                     text("SELECT id, email, login, hpassword FROM Users WHERE email = :email LIMIT 1"),
                     {"email": email},
                 ).first()
-        except Exception as e:
-            return jsonify({"error": f"database error: {e!s}"}), 503
+        except Exception:
+            return jsonify({"error": "database error"}), 503
 
         if not row or not check_password_hash(row.hpassword, password):
             return jsonify({"error": "invalid credentials"}), 401
@@ -198,8 +198,8 @@ def create_app():
                     """),
                     {"id": did},
                 ).one()
-        except Exception as e:
-            return jsonify({"error": f"database error: {e!s}"}), 503
+        except Exception:
+            return jsonify({"error": "database error"}), 503
 
         return jsonify({
             "id": int(row.id),
@@ -224,8 +224,8 @@ def create_app():
                     """),
                     {"uid": int(g.user["id"])},
                 ).all()
-        except Exception as e:
-            return jsonify({"error": f"database error: {e!s}"}), 503
+        except Exception:
+            return jsonify({"error": "database error"}), 503
 
         docs = [{
             "id": int(r.id),
@@ -263,8 +263,8 @@ def create_app():
                     """),
                     {"glogin": str(g.user["login"]), "did": document_id},
                 ).all()
-        except Exception as e:
-            return jsonify({"error": f"database error: {e!s}"}), 503
+        except Exception:
+            return jsonify({"error": "database error"}), 503
 
         versions = [{
             "id": int(r.id),
@@ -293,8 +293,8 @@ def create_app():
                     """),
                     {"glogin": str(g.user["login"])},
                 ).all()
-        except Exception as e:
-            return jsonify({"error": f"database error: {e!s}"}), 503
+        except Exception:
+            return jsonify({"error": "database error"}), 503
 
         versions = [{
             "id": int(r.id),
@@ -330,8 +330,8 @@ def create_app():
                     """),
                     {"id": document_id, "uid": int(g.user["id"])},
                 ).first()
-        except Exception as e:
-            return jsonify({"error": f"database error: {e!s}"}), 503
+        except Exception:
+            return jsonify({"error": "database error"}), 503
 
         # Don’t leak whether a doc exists for another user
         if not row:
@@ -381,8 +381,8 @@ def create_app():
                     """),
                     {"link": link},
                 ).first()
-        except Exception as e:
-            return jsonify({"error": f"database error: {e!s}"}), 503
+        except Exception:
+            return jsonify({"error": "database error"}), 503
 
         # Don’t leak whether a doc exists for another user
         if not row:
@@ -435,6 +435,7 @@ def create_app():
     # DELETE /api/delete-document  (and variants)
     @app.route("/api/delete-document", methods=["DELETE", "POST"])  # POST supported for convenience
     @app.route("/api/delete-document/<document_id>", methods=["DELETE"])
+    @require_auth
     def delete_document(document_id: int | None = None):
         # accept id from path, query (?id= / ?documentid=), or JSON body on POST
         if not document_id:
@@ -452,11 +453,11 @@ def create_app():
         try:
             with get_engine().connect() as conn:
                 row = conn.execute(
-                    text("SELECT * FROM Documents WHERE id = :id"),
-                    {"id": doc_id},
+                    text("SELECT * FROM Documents WHERE id = :id AND ownerid = :uid"),
+                    {"id": doc_id, "uid": int(g.user["id"])},
                 ).first()
-        except Exception as e:
-            return jsonify({"error": f"database error: {e!s}"}), 503
+        except Exception:
+            return jsonify({"error": "database error"}), 503
 
         if not row:
             # Don’t reveal others’ docs—just say not found
@@ -489,9 +490,12 @@ def create_app():
                 # If your schema does NOT have ON DELETE CASCADE on Version.documentid,
                 # uncomment the next line first:
                 # conn.execute(text("DELETE FROM Version WHERE documentid = :id"), {"id": doc_id})
-                conn.execute(text("DELETE FROM Documents WHERE id = :id"), {"id": doc_id})
-        except Exception as e:
-            return jsonify({"error": f"database error during delete: {e!s}"}), 503
+                conn.execute(
+                    text("DELETE FROM Documents WHERE id = :id AND ownerid = :uid"),
+                    {"id": doc_id, "uid": int(g.user["id"])},
+                )
+        except Exception:
+            return jsonify({"error": "database error"}), 503
 
         return jsonify({
             "deleted": True,
@@ -547,8 +551,8 @@ def create_app():
                     """),
                     {"id": doc_id},
                 ).first()
-        except Exception as e:
-            return jsonify({"error": f"database error: {e!s}"}), 503
+        except Exception:
+            return jsonify({"error": "database error"}), 503
 
         if not row:
             return jsonify({"error": "document not found"}), 404
@@ -629,13 +633,13 @@ def create_app():
                     },
                 )
                 vid = int(conn.execute(text("SELECT LAST_INSERT_ID()")).scalar())
-        except Exception as e:
+        except Exception:
             # best-effort cleanup if DB insert fails
             try:
                 dest_path.unlink(missing_ok=True)
             except Exception:
                 pass
-            return jsonify({"error": f"database error during version insert: {e}"}), 503
+            return jsonify({"error": "database error"}), 503
 
         return jsonify({
             "id": vid,
@@ -701,8 +705,8 @@ def create_app():
                     """),
                     {"id": doc_id},
                 ).first()
-        except Exception as e:
-            return jsonify({"error": f"database error: {e!s}"}), 503
+        except Exception:
+            return jsonify({"error": "database error"}), 503
 
         if not row:
             return jsonify({"error": "document not found"}), 404
