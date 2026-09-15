@@ -1,20 +1,18 @@
-import os
-import io
-import hashlib
 import datetime as dt
-from pathlib import Path
+import hashlib
+import os
 from functools import wraps
+from pathlib import Path
 
-from flask import Flask, jsonify, request, g, send_file
-from werkzeug.utils import secure_filename
-from werkzeug.security import generate_password_hash, check_password_hash
-from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
-
+from flask import Flask, g, jsonify, request, send_file
+from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import IntegrityError
+from werkzeug.security import check_password_hash, generate_password_hash
+from werkzeug.utils import secure_filename
 
 import watermarking_utils as WMUtils
-from watermarking_method import WatermarkingMethod
+
 #from watermarking_utils import METHODS, apply_watermark, read_watermark, explore_pdf, is_watermarking_applicable, get_method
 
 def create_app():
@@ -124,7 +122,7 @@ def create_app():
         except IntegrityError:
             return jsonify({"error": "email or login already exists"}), 409
         except Exception as e:
-            return jsonify({"error": f"database error: {str(e)}"}), 503
+            return jsonify({"error": f"database error: {e!s}"}), 503
 
         return jsonify({"id": row.id, "email": row.email, "login": row.login}), 201
 
@@ -144,7 +142,7 @@ def create_app():
                     {"email": email},
                 ).first()
         except Exception as e:
-            return jsonify({"error": f"database error: {str(e)}"}), 503
+            return jsonify({"error": f"database error: {e!s}"}), 503
 
         if not row or not check_password_hash(row.hpassword, password):
             return jsonify({"error": "invalid credentials"}), 401
@@ -201,7 +199,7 @@ def create_app():
                     {"id": did},
                 ).one()
         except Exception as e:
-            return jsonify({"error": f"database error: {str(e)}"}), 503
+            return jsonify({"error": f"database error: {e!s}"}), 503
 
         return jsonify({
             "id": int(row.id),
@@ -227,7 +225,7 @@ def create_app():
                     {"uid": int(g.user["id"])},
                 ).all()
         except Exception as e:
-            return jsonify({"error": f"database error: {str(e)}"}), 503
+            return jsonify({"error": f"database error: {e!s}"}), 503
 
         docs = [{
             "id": int(r.id),
@@ -266,7 +264,7 @@ def create_app():
                     {"glogin": str(g.user["login"]), "did": document_id},
                 ).all()
         except Exception as e:
-            return jsonify({"error": f"database error: {str(e)}"}), 503
+            return jsonify({"error": f"database error: {e!s}"}), 503
 
         versions = [{
             "id": int(r.id),
@@ -296,7 +294,7 @@ def create_app():
                     {"glogin": str(g.user["login"])},
                 ).all()
         except Exception as e:
-            return jsonify({"error": f"database error: {str(e)}"}), 503
+            return jsonify({"error": f"database error: {e!s}"}), 503
 
         versions = [{
             "id": int(r.id),
@@ -333,7 +331,7 @@ def create_app():
                     {"id": document_id, "uid": int(g.user["id"])},
                 ).first()
         except Exception as e:
-            return jsonify({"error": f"database error: {str(e)}"}), 503
+            return jsonify({"error": f"database error: {e!s}"}), 503
 
         # Don’t leak whether a doc exists for another user
         if not row:
@@ -384,7 +382,7 @@ def create_app():
                     {"link": link},
                 ).first()
         except Exception as e:
-            return jsonify({"error": f"database error: {str(e)}"}), 503
+            return jsonify({"error": f"database error: {e!s}"}), 503
 
         # Don’t leak whether a doc exists for another user
         if not row:
@@ -456,7 +454,7 @@ def create_app():
                 query = "SELECT * FROM Documents WHERE id = " + doc_id
                 row = conn.execute(text(query)).first()
         except Exception as e:
-            return jsonify({"error": f"database error: {str(e)}"}), 503
+            return jsonify({"error": f"database error: {e!s}"}), 503
 
         if not row:
             # Don’t reveal others’ docs—just say not found
@@ -491,7 +489,7 @@ def create_app():
                 # conn.execute(text("DELETE FROM Version WHERE documentid = :id"), {"id": doc_id})
                 conn.execute(text("DELETE FROM Documents WHERE id = :id"), {"id": doc_id})
         except Exception as e:
-            return jsonify({"error": f"database error during delete: {str(e)}"}), 503
+            return jsonify({"error": f"database error during delete: {e!s}"}), 503
 
         return jsonify({
             "deleted": True,
@@ -548,7 +546,7 @@ def create_app():
                     {"id": doc_id},
                 ).first()
         except Exception as e:
-            return jsonify({"error": f"database error: {str(e)}"}), 503
+            return jsonify({"error": f"database error: {e!s}"}), 503
 
         if not row:
             return jsonify({"error": "document not found"}), 404
@@ -702,7 +700,7 @@ def create_app():
                     {"id": doc_id},
                 ).first()
         except Exception as e:
-            return jsonify({"error": f"database error: {str(e)}"}), 503
+            return jsonify({"error": f"database error: {e!s}"}), 503
 
         if not row:
             return jsonify({"error": "document not found"}), 404

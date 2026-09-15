@@ -27,19 +27,20 @@ Exit codes
 """
 from __future__ import annotations
 
-from typing import Iterable, Optional
 import argparse
-import json
-import os
-import sys
 import getpass
+import json
+import sys
+from collections.abc import Iterable
 
-from watermarking_method import (
-    InvalidKeyError,
-    SecretNotFoundError,
-    WatermarkingError
+from watermarking_method import InvalidKeyError, SecretNotFoundError, WatermarkingError
+from watermarking_utils import (
+    METHODS,
+    apply_watermark,
+    explore_pdf,
+    is_watermarking_applicable,
+    read_watermark,
 )
-from watermarking_utils import METHODS, apply_watermark, read_watermark, explore_pdf, is_watermarking_applicable
 
 __version__ = "0.1.0"
 
@@ -216,7 +217,7 @@ def build_parser() -> argparse.ArgumentParser:
 # Entrypoint
 # --------------------
 
-def main(argv: Optional[Iterable[str]] = None) -> int:
+def main(argv: Iterable[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(list(argv) if argv is not None else None)
 

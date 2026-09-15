@@ -21,11 +21,11 @@ used. (Other watermarking methods may use PyMuPDF / ``fitz``.)
 """
 from __future__ import annotations
 
-from typing import Final
 import base64
 import hashlib
 import hmac
 import json
+from typing import Final
 
 from watermarking_method import (
     InvalidKeyError,

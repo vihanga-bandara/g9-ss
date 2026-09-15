@@ -40,17 +40,15 @@ which are convenience helpers many implementations will find useful.
 """
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from typing import IO, ClassVar, TypeAlias, Union
-import io
 import os
+from abc import ABC, abstractmethod
+from typing import IO, ClassVar, TypeAlias
 
 # ----------------------------
 # Public type aliases & errors
 # ----------------------------
 
-PdfSource: TypeAlias = Union[bytes, str, os.PathLike[str], IO[bytes]]
+PdfSource: TypeAlias = bytes | str | os.PathLike[str] | IO[bytes]
 """Accepted input type for a PDF document.
 
 Implementations should *not* assume the input is a file path; always call
@@ -261,12 +259,12 @@ class WatermarkingMethod(ABC):
 
 
 __all__ = [
-    "PdfSource",
-    "WatermarkingError",
-    "SecretNotFoundError",
     "InvalidKeyError",
-    "load_pdf_bytes",
-    "is_pdf_bytes",
+    "PdfSource",
+    "SecretNotFoundError",
+    "WatermarkingError",
     "WatermarkingMethod",
+    "is_pdf_bytes",
+    "load_pdf_bytes",
 ]
 
