@@ -444,15 +444,17 @@ def create_app():
                 or (request.is_json and (request.get_json(silent=True) or {}).get("id"))
             )
         try:
-            doc_id = document_id
+            doc_id = int(document_id)
         except (TypeError, ValueError):
             return jsonify({"error": "document id required"}), 400
 
         # Fetch the document (enforce ownership)
         try:
             with get_engine().connect() as conn:
-                query = "SELECT * FROM Documents WHERE id = " + doc_id
-                row = conn.execute(text(query)).first()
+                row = conn.execute(
+                    text("SELECT * FROM Documents WHERE id = :id"),
+                    {"id": doc_id},
+                ).first()
         except Exception as e:
             return jsonify({"error": f"database error: {e!s}"}), 503
 
@@ -513,7 +515,7 @@ def create_app():
                 or (request.is_json and (request.get_json(silent=True) or {}).get("id"))
             )
         try:
-            doc_id = document_id
+            doc_id = int(document_id)
         except (TypeError, ValueError):
             return jsonify({"error": "document id required"}), 400
             
@@ -670,7 +672,7 @@ def create_app():
                 or (request.is_json and (request.get_json(silent=True) or {}).get("id"))
             )
         try:
-            doc_id = document_id
+            doc_id = int(document_id)
         except (TypeError, ValueError):
             return jsonify({"error": "document id required"}), 400
             
