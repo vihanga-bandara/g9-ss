@@ -1,5 +1,6 @@
 from server import app
 
+
 def test_healthz_route():
     client = app.test_client()
     resp = client.get("/healthz")

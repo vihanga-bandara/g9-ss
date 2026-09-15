@@ -36,9 +36,6 @@ python -m pytest
 From the root of the directory:
 
 ```bash
-# Create a file to set environement variables like passwords.
-cp sample.env .env
-
 # Edit .env and pick the passwords you want
 
 # Rebuild the docker image and deploy the containers

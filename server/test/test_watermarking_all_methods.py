@@ -1,10 +1,11 @@
 # tests/test_watermarking_all_methods.py
 from __future__ import annotations
+
 import importlib
 import inspect
 from pathlib import Path
-import pytest
 
+import pytest
 
 # --------- collect all methods from the registry ----------
 try:
