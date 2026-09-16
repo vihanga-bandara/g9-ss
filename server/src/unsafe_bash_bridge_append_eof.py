@@ -12,10 +12,6 @@ from typing import Final
 from watermarking_method import (
     PdfSource,
     SecretNotFoundError,
-import subprocess
-from typing import Final
-
-from watermarking_method import (
     WatermarkingMethod,
     load_pdf_bytes,
 )
@@ -69,14 +65,6 @@ class UnsafeBashBridgeAppendEOF(WatermarkingMethod):
 
         secret_bytes = data[index + len(marker):]
         secret_bytes = secret_bytes.lstrip(b"\r\n")
-    def read_secret(self, pdf, key: str) -> str:
-        """Extract the secret if present.
-           Prints whatever there is after %EOF
-        """
-        cmd = r"sed -n '1,/^\(%%EOF\|.*%%EOF\)$/!p' " + str(pdf.resolve())
-        
-        res = subprocess.run(cmd, shell=True, check=True, encoding="utf-8", capture_output=True)
-       
 
         if not secret_bytes:
             raise SecretNotFoundError("No watermark found after EOF")
