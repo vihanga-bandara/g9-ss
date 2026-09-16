@@ -10,6 +10,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.exc import IntegrityError
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
+from watermarking_method import is_pdf_bytes
 
 import watermarking_utils as WMUtils
 
@@ -159,6 +160,15 @@ def create_app():
         file = request.files["file"]
         if not file or file.filename == "":
             return jsonify({"error": "empty filename"}), 400
+
+
+        data = file.read()
+
+        if not is_pdf_bytes(data):
+            return jsonify({"error": "file is not a valid PDF"}), 400
+
+        file.seek(0)
+
 
         fname = file.filename
 
