@@ -44,6 +44,8 @@ import os
 from abc import ABC, abstractmethod
 from typing import IO, ClassVar, TypeAlias
 
+from sqlalchemy import true
+
 # ----------------------------
 # Public type aliases & errors
 # ----------------------------
@@ -113,13 +115,40 @@ def load_pdf_bytes(src: PdfSource) -> bytes:
 
 
 def is_pdf_bytes(data: bytes) -> bool:
-    """Lightweight check that the data looks like a PDF file.
+    """Check whether the supplied bytes represent a parseable PDF.
 
-    This is intentionally permissive: it verifies the standard header
-    magic (``%PDF-``). Trailers (``%%EOF``) can be absent in incremental
-    updates, so we don't strictly require them here.
+    The function verifies the PDF header, attempts to parse the document
+    with PyMuPDF, requires at least one page, and verifies that each page
+    can be loaded.
     """
-    return data.startswith(b"%PDF-")
+    doc = None
+
+    if not data.startswith(b"%PDF-"):
+        return False
+
+
+    try:
+        import fitz
+        doc = fitz.open(stream=data, filetype="pdf")
+        if not doc.is_pdf:
+            return False
+        if doc.page_count == 0:
+            return False
+        for page_index in range(doc.page_count):
+            doc.load_page(page_index)
+        return True
+    except Exception:
+        return False
+    finally:
+        if doc is not None:
+            doc.close()
+
+
+
+
+
+
+
 
 
 # ---------------------------------
