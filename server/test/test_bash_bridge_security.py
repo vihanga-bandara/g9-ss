@@ -1,10 +1,12 @@
-from unsafe_bash_bridge_append_eof import UnsafeBashBridgeAppendEOF
+from pathlib import Path
+
+from bash_bridge_append_eof import UnsafeBashBridgeAppendEOF
 
 
 def test_command_injection_not_executed(tmp_path):
-    # Create a tiny fake PDF
+    # A real PDF, since load_pdf_bytes now parses the document
     pdf = tmp_path / "test.pdf"
-    pdf.write_bytes(b"%PDF-1.4\n%%EOF\n")
+    pdf.write_bytes((Path(__file__).parent / "valid_test.pdf").read_bytes())
 
     method = UnsafeBashBridgeAppendEOF()
 
