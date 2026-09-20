@@ -266,9 +266,8 @@ def create_app():
                 rows = conn.execute(
                     text("""
                         SELECT v.id, v.documentid, v.link, v.intended_for, v.secret, v.method
-                        FROM Users v
+                        FROM Versions v
                         JOIN Documents d ON d.id = v.documentid
-                        #JOIN Versions v ON d.id = v.documentid
                         WHERE d.ownerid = :uid AND d.id = :did
                     """),
                     {"uid": int(g.user["id"]), "did": document_id},
