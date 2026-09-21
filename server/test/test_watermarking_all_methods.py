@@ -6,7 +6,7 @@ import inspect
 from pathlib import Path
 
 import pytest
-
+pdf_path = Path(__file__).parent / "valid_test.pdf"
 # --------- collect all methods from the registry ----------
 try:
     wm = importlib.import_module("watermarking_utils")
@@ -25,15 +25,9 @@ if not CASES:
 
 # --------- fixtures ----------
 @pytest.fixture(scope="session")
-def sample_pdf_path(tmp_path_factory) -> Path:
-    """Minimal but recognizable PDF bytes."""
-    pdf = tmp_path_factory.mktemp("pdfs") / "sample.pdf"
-    pdf.write_bytes(
-        b"%PDF-1.4\n"
-        b"1 0 obj\n<< /Type /Catalog >>\nendobj\n"
-        b"%%EOF\n"
-    )
-    return pdf
+def sample_pdf_path() -> Path:
+    """Return a valid PDF for watermarking tests."""
+    return Path(__file__).parent / "valid_test.pdf"
 
 @pytest.fixture(scope="session")
 def secret() -> str:
