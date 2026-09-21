@@ -617,16 +617,10 @@ def create_app():
         candidate = f"{base_name}__{intended_slug}.pdf"
         dest_path = dest_dir / candidate
 
-        # write bytes
-        try:
-            with dest_path.open("wb") as f:
-                f.write(wm_bytes)
-        except Exception as e:
-            return jsonify({"error": f"failed to write watermarked file: {e}"}), 500
-
         # link token = sha1(watermarked_file_name)
         link_token = hashlib.sha1(candidate.encode("utf-8")).hexdigest()
 
+        # reserve the row first: a failed insert must not touch an existing file
         try:
             with get_engine().begin() as conn:
                 conn.execute(
@@ -646,12 +640,13 @@ def create_app():
                 )
                 vid = int(conn.execute(text("SELECT LAST_INSERT_ID()")).scalar())
         except Exception:
-            # best-effort cleanup if DB insert fails
-            try:
-                dest_path.unlink(missing_ok=True)
-            except Exception:
-                pass
             return jsonify({"error": "database error"}), 503
+
+        try:
+            with dest_path.open("wb") as f:
+                f.write(wm_bytes)
+        except Exception as e:
+            return jsonify({"error": f"failed to write watermarked file: {e}"}), 500
 
         return jsonify({
             "id": vid,

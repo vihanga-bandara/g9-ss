@@ -197,3 +197,51 @@ def test_upload_stores_file_under_owner_id(client, auth_headers, app, upload_dat
     assert [d.name for d in files_root.iterdir()] == ["1"]
     assert len(list((files_root / "1").glob("*.pdf"))) == 1
 
+
+@pytest.fixture
+def watermark_database(app, tmp_path):
+    """Engine that finds the document but fails the version insert."""
+    source = tmp_path / "files" / "1" / "report.pdf"
+    source.parent.mkdir(parents=True)
+    source.write_bytes(VALID_PDF.read_bytes())
+
+    document = Mock()
+    document.id = 7
+    document.name = "report"
+    document.path = str(source)
+
+    connection = Mock()
+    connection.execute.return_value.first.return_value = document
+
+    engine = Mock()
+    engine.connect.return_value.__enter__ = Mock(return_value=connection)
+    engine.connect.return_value.__exit__ = Mock(return_value=False)
+    engine.begin.side_effect = RuntimeError("insert failed")
+
+    app.config["_ENGINE"] = engine
+    return source
+
+
+def test_failed_version_insert_leaves_existing_file_intact(
+    client,
+    auth_headers,
+    watermark_database,
+):
+    watermarks = watermark_database.parent / "watermarks"
+    existing = watermarks / "report__recipientexample.test.pdf"
+    existing.parent.mkdir(parents=True)
+    existing.write_bytes(b"watermark that already belongs to someone")
+
+    response = client.post(
+        "/api/create-watermark/7",
+        headers=auth_headers,
+        json={
+            "method": "toy-eof",
+            "intended_for": "recipient@example.test",
+            "secret": "test-secret",
+            "key": "test-key",
+        },
+    )
+
+    assert response.status_code == 503
+    assert existing.read_bytes() == b"watermark that already belongs to someone"
