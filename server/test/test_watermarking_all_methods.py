@@ -25,15 +25,9 @@ if not CASES:
 
 # --------- fixtures ----------
 @pytest.fixture(scope="session")
-def sample_pdf_path(tmp_path_factory) -> Path:
-    """Minimal but recognizable PDF bytes."""
-    pdf = tmp_path_factory.mktemp("pdfs") / "sample.pdf"
-    pdf.write_bytes(
-        b"%PDF-1.4\n"
-        b"1 0 obj\n<< /Type /Catalog >>\nendobj\n"
-        b"%%EOF\n"
-    )
-    return pdf
+def sample_pdf_path() -> Path:
+    """A real PDF, since load_pdf_bytes now parses the document."""
+    return Path(__file__).parent / "valid_test.pdf"
 
 @pytest.fixture(scope="session")
 def secret() -> str:
