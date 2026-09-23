@@ -89,7 +89,7 @@ class WatermarkService:
         if not row:
             raise ServiceError("document not found", 404)
 
-        return row, self.documents.resolve_file(row.path)
+        return row, self.documents.check_stored_file(row.path)
 
     def create_watermark(self, owner_id, document_id, payload):
         doc_id = document_id

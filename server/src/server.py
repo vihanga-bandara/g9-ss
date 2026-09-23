@@ -48,7 +48,7 @@ def create_app():
     auth_service = AuthService(
         get_engine, app.config["SECRET_KEY"], app.config["TOKEN_TTL_SECONDS"]
     )
-    documents = DocumentService(get_engine, app.config["STORAGE_DIR"])
+    documents = DocumentService(get_engine, app.config["STORAGE_DIR"], app.logger)
     watermarks = WatermarkService(get_engine, documents)
 
     @app.errorhandler(ServiceError)
@@ -67,10 +67,12 @@ def create_app():
         return wrapper
 
     def document_id_from_request(document_id, allow_json=False):
-        if document_id is None:
+        if document_id is None or (allow_json and not document_id):
             document_id = request.args.get("id") or request.args.get("documentid")
-            if not document_id and allow_json and request.is_json:
-                document_id = (request.get_json(silent=True) or {}).get("id")
+            if not document_id and allow_json:
+                document_id = request.is_json and (
+                    request.get_json(silent=True) or {}
+                ).get("id")
         try:
             return int(document_id)
         except (TypeError, ValueError) as exc:
@@ -159,7 +161,8 @@ def create_app():
 
         # Support both path param and ?id=/ ?documentid=
         doc_id = document_id_from_request(document_id)
-        row, path = documents.get_document(g.user["id"], doc_id)
+        row = documents.find_document(g.user["id"], doc_id)
+        path = documents.check_stored_file(row.path)
         return pdf_response(
             path, row.name, "private, max-age=0, must-revalidate", row.sha256_hex
         )

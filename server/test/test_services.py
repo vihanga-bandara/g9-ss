@@ -49,7 +49,7 @@ def test_token_failures_keep_their_error_contract(expired):
 
 
 def test_document_paths_resolve_under_storage(tmp_path):
-    documents = DocumentService(Mock(), tmp_path)
+    documents = DocumentService(Mock(), tmp_path, Mock())
     pdf = tmp_path / "report.pdf"
     pdf.write_bytes(b"example")
     assert documents.resolve_file("report.pdf") == pdf
