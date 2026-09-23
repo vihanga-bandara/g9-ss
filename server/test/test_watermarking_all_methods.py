@@ -6,7 +6,7 @@ import inspect
 from pathlib import Path
 
 import pytest
-
+pdf_path = Path(__file__).parent / "valid_test.pdf"
 # --------- collect all methods from the registry ----------
 try:
     wm = importlib.import_module("watermarking_utils")
@@ -26,7 +26,7 @@ if not CASES:
 # --------- fixtures ----------
 @pytest.fixture(scope="session")
 def sample_pdf_path() -> Path:
-    """A real PDF, since load_pdf_bytes now parses the document."""
+    """Return a valid PDF for watermarking tests."""
     return Path(__file__).parent / "valid_test.pdf"
 
 @pytest.fixture(scope="session")

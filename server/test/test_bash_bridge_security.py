@@ -9,7 +9,6 @@ def test_command_injection_not_executed(tmp_path):
     pdf.write_bytes((Path(__file__).parent / "valid_test.pdf").read_bytes())
 
     method = UnsafeBashBridgeAppendEOF()
-
     # If shell execution were possible, this would create the file below
     payload = '"; touch /tmp/tatou-pwned; #'
 
