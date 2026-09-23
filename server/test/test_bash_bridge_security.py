@@ -1,4 +1,4 @@
-from unsafe_bash_bridge_append_eof import UnsafeBashBridgeAppendEOF
+from bash_bridge_append_eof import UnsafeBashBridgeAppendEOF
 
 
 def test_command_injection_not_executed(tmp_path):
