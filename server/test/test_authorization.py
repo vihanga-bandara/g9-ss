@@ -5,11 +5,16 @@ Anonymous users cannot access originals or private metadata.
 Repeat checks for path, query-string, and JSON ID variants where supported.
 """
 
+import datetime as dt
 import importlib
+import io
+from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
 from itsdangerous import URLSafeTimedSerializer
+
+VALID_PDF = Path(__file__).parent / "valid_test.pdf"
 
 
 @pytest.fixture
@@ -152,3 +157,91 @@ def test_request_cannot_override_authenticated_owner(
     # Ownership must come from the verified token.
     assert parameters["uid"] == 1
     assert response.status_code == 404
+
+@pytest.fixture
+def upload_database(app):
+    """Engine that accepts the insert and answers the read-back."""
+    connection = Mock()
+    engine = Mock()
+    engine.begin.return_value.__enter__ = Mock(return_value=connection)
+    engine.begin.return_value.__exit__ = Mock(return_value=False)
+
+    stored = Mock()
+    stored.id = 7
+    stored.name = "report"
+    stored.creation = dt.datetime(2026, 1, 1)
+    stored.sha256_hex = "ab" * 32
+    stored.size = VALID_PDF.stat().st_size
+    connection.execute.return_value.one.return_value = stored
+    connection.execute.return_value.scalar.return_value = 7
+
+    app.config["_ENGINE"] = engine
+    return connection
+
+
+def test_upload_stores_file_under_owner_id(client, auth_headers, app, upload_database):
+    response = client.post(
+        "/api/upload-document",
+        data={
+            "file": (io.BytesIO(VALID_PDF.read_bytes()), "report.pdf"),
+            "name": "report",
+        },
+        headers=auth_headers,
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 201
+
+    files_root = Path(app.config["STORAGE_DIR"]) / "files"
+    # The token carries uid 1 and login "alice"; the path must use the uid.
+    assert [d.name for d in files_root.iterdir()] == ["1"]
+    assert len(list((files_root / "1").glob("*.pdf"))) == 1
+
+
+@pytest.fixture
+def watermark_database(app, tmp_path):
+    """Engine that finds the document but fails the version insert."""
+    source = tmp_path / "files" / "1" / "report.pdf"
+    source.parent.mkdir(parents=True)
+    source.write_bytes(VALID_PDF.read_bytes())
+
+    document = Mock()
+    document.id = 7
+    document.name = "report"
+    document.path = str(source)
+
+    connection = Mock()
+    connection.execute.return_value.first.return_value = document
+
+    engine = Mock()
+    engine.connect.return_value.__enter__ = Mock(return_value=connection)
+    engine.connect.return_value.__exit__ = Mock(return_value=False)
+    engine.begin.side_effect = RuntimeError("insert failed")
+
+    app.config["_ENGINE"] = engine
+    return source
+
+
+def test_failed_version_insert_leaves_existing_file_intact(
+    client,
+    auth_headers,
+    watermark_database,
+):
+    watermarks = watermark_database.parent / "watermarks"
+    existing = watermarks / "report__recipientexample.test.pdf"
+    existing.parent.mkdir(parents=True)
+    existing.write_bytes(b"watermark that already belongs to someone")
+
+    response = client.post(
+        "/api/create-watermark/7",
+        headers=auth_headers,
+        json={
+            "method": "toy-eof",
+            "intended_for": "recipient@example.test",
+            "secret": "test-secret",
+            "key": "test-key",
+        },
+    )
+
+    assert response.status_code == 503
+    assert existing.read_bytes() == b"watermark that already belongs to someone"

@@ -172,7 +172,7 @@ def create_app():
 
         fname = file.filename
 
-        user_dir = app.config["STORAGE_DIR"] / "files" / g.user["login"]
+        user_dir = app.config["STORAGE_DIR"] / "files" / str(g.user["id"])
         user_dir.mkdir(parents=True, exist_ok=True)
 
         ts = dt.datetime.utcnow().strftime("%Y%m%dT%H%M%S%fZ")
@@ -266,9 +266,8 @@ def create_app():
                 rows = conn.execute(
                     text("""
                         SELECT v.id, v.documentid, v.link, v.intended_for, v.secret, v.method
-                        FROM Users v
+                        FROM Versions v
                         JOIN Documents d ON d.id = v.documentid
-                        #JOIN Versions v ON d.id = v.documentid
                         WHERE d.ownerid = :uid AND d.id = :did
                     """),
                     {"uid": int(g.user["id"]), "did": document_id},
@@ -618,16 +617,10 @@ def create_app():
         candidate = f"{base_name}__{intended_slug}.pdf"
         dest_path = dest_dir / candidate
 
-        # write bytes
-        try:
-            with dest_path.open("wb") as f:
-                f.write(wm_bytes)
-        except Exception as e:
-            return jsonify({"error": f"failed to write watermarked file: {e}"}), 500
-
         # link token = sha1(watermarked_file_name)
         link_token = hashlib.sha1(candidate.encode("utf-8")).hexdigest()
 
+        # reserve the row first: a failed insert must not touch an existing file
         try:
             with get_engine().begin() as conn:
                 conn.execute(
@@ -647,12 +640,13 @@ def create_app():
                 )
                 vid = int(conn.execute(text("SELECT LAST_INSERT_ID()")).scalar())
         except Exception:
-            # best-effort cleanup if DB insert fails
-            try:
-                dest_path.unlink(missing_ok=True)
-            except Exception:
-                pass
             return jsonify({"error": "database error"}), 503
+
+        try:
+            with dest_path.open("wb") as f:
+                f.write(wm_bytes)
+        except Exception as e:
+            return jsonify({"error": f"failed to write watermarked file: {e}"}), 500
 
         return jsonify({
             "id": vid,
