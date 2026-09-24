@@ -2,7 +2,6 @@
 
 import datetime as dt
 import hashlib
-import logging
 from pathlib import Path
 
 from sqlalchemy import text
@@ -11,10 +10,10 @@ from service_errors import ServiceError
 
 
 class DocumentService:
-    def __init__(self, get_engine, storage_root):
+    def __init__(self, get_engine, storage_root, logger):
         self.get_engine = get_engine
         self.storage_root = Path(storage_root).resolve()
-        self.logger = logging.getLogger(__name__)
+        self.logger = logger
 
     def _sha256_file(self, path: Path):
         h = hashlib.sha256()
@@ -149,6 +148,25 @@ class DocumentService:
     def resolve_file(self, path):
         try:
             file_path = self._safe_resolve_under_storage(path, self.storage_root)
+        except (RuntimeError, ValueError, OSError) as exc:
+            raise ServiceError("document path invalid", 500) from exc
+        if not file_path.exists():
+            raise ServiceError("file missing on disk", 410)
+        return file_path
+
+    def check_stored_file(self, path: str) -> Path:
+        """Return the stored path unchanged once it lies inside storage and exists.
+
+        Args:
+            path: Path saved in the database; unlike resolve_file, a relative path
+                is not joined onto the storage root.
+
+        Returns:
+            The path as stored, not resolved.
+        """
+        file_path = Path(path)
+        try:
+            file_path.resolve().relative_to(self.storage_root)
         except (RuntimeError, ValueError, OSError) as exc:
             raise ServiceError("document path invalid", 500) from exc
         if not file_path.exists():
