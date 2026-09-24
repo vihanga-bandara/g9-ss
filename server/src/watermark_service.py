@@ -1,6 +1,6 @@
 """Watermark operations and the persisted versions they produce."""
 
-import hashlib
+import secrets
 from pathlib import Path
 
 from sqlalchemy import text
@@ -144,17 +144,15 @@ class WatermarkService:
         except Exception as e:
             raise ServiceError(f"watermarking failed: {e}", 500)
 
-        # build destination file name: "<original_name>__<intended_to>.pdf"
         base_name = Path(row.name or file_path.name).stem
         intended_slug = secure_filename(intended_for)
         dest_dir = file_path.parent / "watermarks"
         dest_dir.mkdir(parents=True, exist_ok=True)
 
         candidate = f"{base_name}__{intended_slug}.pdf"
-        dest_path = dest_dir / candidate
-
-        # link token = sha1(watermarked_file_name)
-        link_token = hashlib.sha1(candidate.encode("utf-8")).hexdigest()
+        # Random so links can't be guessed; files named after it never collide.
+        link_token = secrets.token_hex(16)
+        dest_path = dest_dir / f"{link_token}.pdf"
 
         # reserve the row first: a failed insert must not touch an existing file
         try:
