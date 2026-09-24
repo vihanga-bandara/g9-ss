@@ -6,7 +6,7 @@ import inspect
 from pathlib import Path
 
 import pytest
-pdf_path = Path(__file__).parent / "valid_test.pdf"
+
 # --------- collect all methods from the registry ----------
 try:
     wm = importlib.import_module("watermarking_utils")
