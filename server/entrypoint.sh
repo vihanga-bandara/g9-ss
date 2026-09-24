@@ -17,5 +17,6 @@ fi
 
 # --- Start the server ---
 echo "Starting server..."
+# Keep one worker: RMAP holds each handshake in memory between its two requests.
 exec gunicorn -b 0.0.0.0:5000 server:app
 
