@@ -128,8 +128,8 @@ def is_pdf_bytes(data: bytes) -> bool:
 
 
     try:
-        import fitz
-        doc = fitz.open(stream=data, filetype="pdf")
+        import pymupdf
+        doc = pymupdf.open(stream=data, filetype="pdf")
         if not doc.is_pdf:
             return False
         if doc.page_count == 0:
