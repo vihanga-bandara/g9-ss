@@ -10,6 +10,7 @@ dependencies = [
 	"gunicorn==26.2.0",
 	"PyMySQL==1.1.2",
 	"SQLAlchemy==2.0.43",
+	"cryptography==50.0.1",
 ]
 
 [project.optional-dependencies]
@@ -29,6 +30,9 @@ line-length = 88
 
 [tool.ruff.lint]
 select = ["E", "F", "S"]
+
+[tool.ruff.lint.per-file-ignores]
+"test/*.py" = ["S101"]
 
 [project.scripts]
 pdfwm = "watermarking_cli:main"                 # now you can run `pdfwm methods`
