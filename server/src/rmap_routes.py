@@ -1,7 +1,5 @@
 import secrets
-from collections.abc import Generator
-from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 from flask import Blueprint, jsonify, request
@@ -21,7 +19,7 @@ class RmapSettings:
     owner_id: int
     document_id: int
     method: str
-    watermark_key: str = field(repr=False)
+    watermark_key: str
 
 
 def load_rmap_server(keys_dir: Path, passphrase: str | None) -> RMAPServer:
@@ -34,14 +32,6 @@ def load_rmap_server(keys_dir: Path, passphrase: str | None) -> RMAPServer:
     return rmap_server
 
 
-@contextmanager
-def reject_bad_messages() -> Generator[None, None, None]:
-    try:
-        yield
-    except BAD_MESSAGE_ERRORS:
-        raise ServiceError("invalid RMAP message", 400)
-
-
 def create_blueprint(
     rmap_server: RMAPServer, watermarks: WatermarkService, settings: RmapSettings
 ) -> Blueprint:
@@ -49,16 +39,20 @@ def create_blueprint(
 
     @bp.post("/api/rmap-initiate")
     def rmap_initiate():
-        with reject_bad_messages():
+        try:
             _, response = rmap_server.receiveMsg1(request.get_json(silent=True) or {})
+        except BAD_MESSAGE_ERRORS:
+            raise ServiceError("invalid RMAP message", 400)
         return jsonify(response), 200
 
     @bp.post("/api/rmap-get-link")
     def rmap_get_link():
-        with reject_bad_messages():
+        try:
             identity, link, response = rmap_server.receiveMsg2(
                 request.get_json(silent=True) or {}
             )
+        except BAD_MESSAGE_ERRORS:
+            raise ServiceError("invalid RMAP message", 400)
         watermarks.create_watermark(
             settings.owner_id,
             settings.document_id,
