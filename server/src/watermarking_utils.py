@@ -34,6 +34,7 @@ from typing import Any, Final
 
 from add_after_eof import AddAfterEOF
 from dwt_svd_v2 import DWTSVDWatermarkV2
+from ghost_text import GhostText
 from watermarking_method import (
     PdfSource,
     WatermarkingMethod,
@@ -47,7 +48,7 @@ from watermarking_method import (
 METHODS: dict[str, WatermarkingMethod] = {
     AddAfterEOF.name: AddAfterEOF(),
     DWTSVDWatermarkV2.name: DWTSVDWatermarkV2(),
-    
+    GhostText.name: GhostText(),
 }
 """Registry of available watermarking methods.
 
