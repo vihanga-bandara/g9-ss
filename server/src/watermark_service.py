@@ -2,6 +2,7 @@
 
 import secrets
 from pathlib import Path
+from typing import Any
 
 from sqlalchemy import text
 from werkzeug.utils import secure_filename
@@ -91,7 +92,13 @@ class WatermarkService:
 
         return row, self.documents.check_stored_file(row.path)
 
-    def create_watermark(self, owner_id, document_id, payload):
+    def create_watermark(
+        self,
+        owner_id: int,
+        document_id: int,
+        payload: dict[str, Any],
+        link: str | None = None,
+    ) -> dict[str, object]:
         doc_id = document_id
         method = payload.get("method")
         intended_for = payload.get("intended_for")
@@ -151,7 +158,7 @@ class WatermarkService:
 
         candidate = f"{base_name}__{intended_slug}.pdf"
         # Random so links can't be guessed; files named after it never collide.
-        link_token = secrets.token_hex(16)
+        link_token = link or secrets.token_hex(16)
         dest_path = dest_dir / f"{link_token}.pdf"
 
         # reserve the row first: a failed insert must not touch an existing file
