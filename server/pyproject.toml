@@ -12,6 +12,9 @@ dependencies = [
 	"SQLAlchemy==2.0.43",
 	"rmap @ git+https://github.com/nharrand/RMAP.git@527cf525b93adff039ab765a45604366e4d4c740",  # v1.0.2
 	"cryptography==50.0.1",  # PGPy, used by rmap, needs ciphers cryptography is removing
+	"numpy==2.5.3",
+	"PyWavelets==1.10.0",
+	"reedsolo==1.7.0",
 ]
 
 [project.optional-dependencies]
