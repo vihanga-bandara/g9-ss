@@ -1,16 +1,19 @@
-""" A robust DWT-SVD image watermark embedded into rasterized PDF pages.
-The watermarking method was inspired by DWT-SVD watermarking techniques, 
-including the approach demonstrated by Vicentini et al.'s DWT-SVD implementation. 
-The method retains the general principle of applying DWT to image blocks 
-and modifying singular values in the LL sub-band, 
-but uses a different embedding and extraction scheme based on binary quantization of the dominant singular value. 
-It additionally incorporates keyed placement, synchronization, Reed-Solomon error correction, 
+"""A robust DWT-SVD image watermark embedded into rasterized PDF pages.
+The watermarking method was inspired by DWT-SVD watermarking techniques,
+including the approach demonstrated by Vicentini et al.'s DWT-SVD implementation.
+The method retains the general principle of applying DWT to image blocks
+and modifying singular values in the LL sub-band,
+but uses a different embedding and extraction scheme based on binary
+quantization of the dominant singular value.
+It additionally incorporates keyed placement, synchronization,
+Reed-Solomon error correction,
 and HMAC authentication for the Tatou use case.
 
-The core idea is: each 16×16 image block carries one bit; 
-DWT selects the low-frequency image information, 
-SVD gives a stable numerical feature, and the parity of the quantized largest singular value represents 0 or 1. 
-Everything else—Reed-Solomon, HMAC, synchronization, keyed placement, repetition, 
+The core idea is: each 16×16 image block carries one bit;
+DWT selects the low-frequency image information,
+SVD gives a stable numerical feature, and the parity of the quantized largest
+singular value represents 0 or 1.
+Everything else—Reed-Solomon, HMAC, synchronization, keyed placement, repetition,
 and rotation/alignment search—makes that basic idea more reliable and secure.
 
 """
@@ -31,6 +34,7 @@ from watermarking_method import (
     WatermarkingMethod,
     load_pdf_bytes,
 )
+
 # ============================================================
 # 1. Configuration and watermark format
 # ============================================================
@@ -40,7 +44,7 @@ DPI = 144
 BLOCK_SIZE = 16
 # Haar wavelet is used for the DWT transformation.
 WAVELET = "haar"
-#safty and security limits for PDF and image sizes
+# safty and security limits for PDF and image sizes
 MAX_PAGES = 32
 MAX_PAGE_PIXELS = 12_000_000
 ## Watermark grid: 32x24 blocks = 768 bits.
@@ -48,7 +52,7 @@ ROWS, COLS = 32, 24
 HEIGHT, WIDTH = ROWS * 16, COLS * 16
 # Payload and error-correction sizes.
 STEP = 96.0
-#payload and error-correction sizes.
+# payload and error-correction sizes.
 PAYLOAD_BYTES = 42
 DATA_BYTES = 64
 PARITY_BYTES = 24
@@ -59,10 +63,11 @@ SYNC = np.unpackbits(
     np.frombuffer(hashlib.sha256(b"tatou-v2-sync").digest()[:8], dtype=np.uint8)
 )
 
+
 # ============================================================
 # 2. DWT-SVD block embedding and extraction
 # ============================================================
-#Image processing 
+# Image processing
 def luminance(rgb: np.ndarray) -> np.ndarray:
     rgb = rgb.astype(np.float64)
     return 0.299 * rgb[..., 0] + 0.587 * rgb[..., 1] + 0.114 * rgb[..., 2]
@@ -72,10 +77,6 @@ def singular_value(rgb: np.ndarray) -> float:
     ll, _ = pywt.dwt2(luminance(rgb), WAVELET, mode="periodization")
     return float(np.linalg.svd(ll, compute_uv=False)[0])
 
-
-def decode_block(rgb: np.ndarray, step=STEP) -> int:
-    level = math.floor(singular_value(rgb) / step + 0.5)
-    return level % 2
 
 # embedding and reading the watermark in the image
 def embed_block(rgb: np.ndarray, bit: int, step=STEP) -> np.ndarray:
@@ -134,9 +135,11 @@ def embed_block(rgb: np.ndarray, bit: int, step=STEP) -> np.ndarray:
 
     return best
 
+
 # ============================================================
 # 3. Keyed placement and authentication
 # ============================================================
+
 
 # The key controls where payload bits are placed.
 # It does not encrypt the secret.
@@ -158,7 +161,8 @@ def placement_order(count: int, key: str) -> list[int]:
         key=lambda index: hmac.digest(seed, index.to_bytes(8, "big"), "sha256"),
     )
 
-# The following functions are used to render pages, encode/decode frames, and embed/read watermarks in images.
+
+# Render PDF pages before embedding or extracting image watermarks.
 def render_page(page: fitz.Page) -> np.ndarray:
     width = math.ceil(page.rect.width * DPI / 72)
     height = math.ceil(page.rect.height * DPI / 72)
@@ -181,8 +185,9 @@ def render_page(page: fitz.Page) -> np.ndarray:
         .copy()
     )
 
- # Derive a separate HMAC authentication key from the user key.
- # Frame before Reed-Solomon:
+
+# Derive a separate HMAC authentication key from the user key.
+# Frame before Reed-Solomon:
 # [ DWS2 | length | secret + padding | HMAC ]
 #
 # Reed-Solomon then adds 24 parity bytes.
@@ -191,6 +196,7 @@ def auth_key(key):
     if not isinstance(key, str) or not key:
         raise ValueError("key must be a non-empty string")
     return hmac.digest(key.encode(), b"tatou:dwt-svd:v2:authentication", "sha256")
+
 
 # ============================================================
 # 4. Payload encoding and Reed-Solomon error correction
@@ -206,7 +212,8 @@ def encode_frame(secret, key):
     tag = hmac.digest(signing_key, body, "sha256")[:16]
     return bytes(RSCodec(PARITY_BYTES).encode(body + tag))
 
-# 
+
+#
 def decode_frame(encoded, key):
     if len(encoded) != DATA_BYTES + PARITY_BYTES:
         raise ValueError("invalid encoded frame size")
@@ -224,9 +231,11 @@ def decode_frame(encoded, key):
         raise ValueError("invalid watermark header")
     return body[HEADER.size : HEADER.size + length].decode("utf-8")
 
+
 # ============================================================
 # 5. Image-level watermark embedding and recovery
 # ============================================================
+
 
 def origins(image):
     height, width = image.shape[:2]
@@ -252,13 +261,16 @@ def embed_image(image, frame, key):
             block[:] = embed_block(block, int(bit), step=STEP)
     return image
 
+
 ## Decode all 16x16 blocks into a grid of candidate watermark bits.
 def bit_grid(image, dy, dx):
     h = (image.shape[0] - dy) // 16
     w = (image.shape[1] - dx) // 16
-    if h < ROWS or w < COLS:
+    if not ((h >= ROWS and w >= COLS) or (h >= COLS and w >= ROWS)):
         return None
-    y = luminance(image[dy : dy + h * 16, dx : dx + w * 16])
+    y = image[dy : dy + h * 16, dx : dx + w * 16]
+    if y.ndim == 3:
+        y = luminance(y)
     # Haar LL coefficients, equivalent to dwt2(..., 'haar') on each block.
     ll = (y[::2, ::2] + y[1::2, ::2] + y[::2, 1::2] + y[1::2, 1::2]) / 2
     blocks = ll.reshape(h, 8, w, 8).transpose(0, 2, 1, 3)
@@ -266,31 +278,109 @@ def bit_grid(image, dy, dx):
     return (np.floor(singular / STEP + 0.5).astype(np.int64) % 2).astype(np.uint8)
 
 
-def read_image(image, key, *, search_offsets=True):
-    order = np.asarray(placement_order(704, "v2:" + key))
-    # Expected intact alignment first, then all remaining sub-block offsets.
-    expected = origins(image)
-    offsets = [(y % 16, x % 16) for y, x in expected]
-    if search_offsets:
-        offsets += [(y, x) for y in range(16) for x in range(16)]
-    for dy, dx in dict.fromkeys(offsets):
-        grid = bit_grid(image, dy, dx)
-        if grid is None:
+def quick_offsets(height, width):
+    """Map centered tile alignment in each orientation back to original pixels."""
+    for turns in range(4):
+        h, w = (width, height) if turns % 2 else (height, width)
+        if h < HEIGHT or w < WIDTH:
             continue
-        windows = np.lib.stride_tricks.sliding_window_view(grid, (3, COLS))
+        y = (h % HEIGHT) // 2
+        x = (w % WIDTH) // 2
+        dy, dx = ((y, x), (x, width - y), (height - y, width - x), (height - x, y))[
+            turns
+        ]
+        yield dy % BLOCK_SIZE, dx % BLOCK_SIZE
+
+
+def read_grid(grid, order, key):
+    # Haar LL's largest singular value is invariant under quarter turns:
+    # row/column permutations and transposition do not change singular values.
+    for turns in range(4):
+        rotated = np.rot90(grid, turns)
+        h, w = rotated.shape
+        if h < ROWS or w < COLS:
+            continue
+        windows = np.lib.stride_tricks.sliding_window_view(rotated, (3, COLS))
+        windows = windows[: h - ROWS + 1]
         scores = np.sum(
             windows.reshape(*windows.shape[:2], -1)[..., :64] == SYNC, axis=-1
         )
         for row, col in np.argwhere(scores >= 58):
-            tile = grid[row : row + ROWS, col : col + COLS]
-            if tile.shape != (ROWS, COLS):
-                continue
+            tile = rotated[row : row + ROWS, col : col + COLS]
             encoded = np.packbits(tile.ravel()[64 + order]).tobytes()
             try:
                 return decode_frame(encoded, key)
             except ValueError:
                 continue
     raise SecretNotFoundError("No authenticated v2 watermark found")
+
+
+def read_image(image, key, *, search_offsets=False):
+    """Run either the quick pass or remaining crop alignments, without overlap."""
+    order = np.asarray(placement_order(704, "v2:" + key))
+    quick = set(quick_offsets(*image.shape[:2]))
+    offsets = (
+        [
+            (y, x)
+            for y in range(BLOCK_SIZE)
+            for x in range(BLOCK_SIZE)
+            if (y, x) not in quick
+        ]
+        if search_offsets
+        else sorted(quick)
+    )
+    # Convert once; each grid/SVD is shared by all four orientations.
+    gray = luminance(image)
+    for dy, dx in offsets:
+        grid = bit_grid(gray, dy, dx)
+        if grid is None:
+            continue
+        try:
+            return read_grid(grid, order, key)
+        except SecretNotFoundError:
+            continue
+    raise SecretNotFoundError("No authenticated v2 watermark found")
+
+
+def page_images(page):
+    """Yield unique candidates, skipping pages with no displayed raster image."""
+    info_list = page.get_image_info(xrefs=True)
+    if not info_list:
+        return
+    seen_xrefs, seen_pixels = set(), set()
+    count = 0
+    for info in info_list:
+        xref = info["xref"]
+        if (
+            not xref
+            or xref in seen_xrefs
+            or info["width"] * info["height"] > MAX_PAGE_PIXELS
+        ):
+            continue
+        seen_xrefs.add(xref)
+        pix = fitz.Pixmap(page.parent, xref)
+        if pix.colorspace is None:
+            continue
+        if pix.colorspace.n != 3:
+            pix = fitz.Pixmap(fitz.csRGB, pix)
+        if pix.alpha:
+            pix = fitz.Pixmap(pix, 0)
+        image = np.frombuffer(pix.samples, np.uint8).reshape(pix.height, pix.width, 3)
+        identity = (image.shape, hashlib.sha256(image.tobytes()).digest())
+        if identity not in seen_pixels:
+            seen_pixels.add(identity)
+            yield image
+        count += 1
+        if count == 4:
+            break
+    try:
+        image = render_page(page)
+    except ValueError:
+        return
+    identity = (image.shape, hashlib.sha256(image.tobytes()).digest())
+    if identity not in seen_pixels:
+        yield image
+
 
 # ============================================================
 # 6. PDF integration
@@ -348,7 +438,7 @@ class DWTSVDWatermarkV2(WatermarkingMethod):
             return False
 
     def add_watermark(self, pdf, secret, key, position=None):
-         # Create the authenticated and error-corrected watermark payload.
+        # Create the authenticated and error-corrected watermark payload.
         frame = encode_frame(secret, key)
         with (
             fitz.open(stream=load_pdf_bytes(pdf), filetype="pdf") as source,
@@ -390,83 +480,18 @@ class DWTSVDWatermarkV2(WatermarkingMethod):
             raise WatermarkingError("Saved PDF watermark verification failed")
         return result
 
-    def read_secret(self, pdf, key, *, original_size=None):
-        # Search the PDF for an authenticated DWT-SVD watermark.
-        #  Validate the supplied key and optional original dimensions.
-        # Process every PDF page until a valid watermark is found.
-
+    def read_secret(self, pdf, key):
+        """Try every page's quick alignment before any expensive crop search."""
         auth_key(key)
-        if original_size is not None:
-            if (
-                len(original_size) != 2
-                or any(not isinstance(n, int) or n <= 0 for n in original_size)
-                or original_size[0] * original_size[1] > MAX_PAGE_PIXELS
-            ):
-                raise ValueError("invalid original pixel dimensions")
         with fitz.open(stream=load_pdf_bytes(pdf), filetype="pdf") as doc:
             self._validate_document(doc)
-            for page in doc:
-                images = []
-                seen = set()
-                # Inspect a bounded number of displayed image objects; do not
-                # trust PDF metadata as an authentication or alignment proof.
-                for info in page.get_image_info(xrefs=True):
-                    xref = info["xref"]
-                    if (
-                        not xref
-                        or xref in seen
-                        or info["width"] * info["height"] > MAX_PAGE_PIXELS
-                    ):
-                        continue
-                    seen.add(xref)
-                    pix = fitz.Pixmap(doc, xref)
-                    if pix.colorspace is None:
-                        continue
-                    if pix.colorspace.n != 3:
-                        pix = fitz.Pixmap(fitz.csRGB, pix)
-                    if pix.alpha:
-                        pix = fitz.Pixmap(pix, 0)
-                    images.append(
-                        np.frombuffer(pix.samples, np.uint8).reshape(
-                            pix.height, pix.width, 3
-                        )
-                    )
-                    if len(images) == 4:
-                        break
-                try:
-                    images.append(render_page(page))
-                except ValueError:
-                    pass
-                if original_size is not None:
-                    width, height = original_size
-                    pix = page.get_pixmap(
-                        matrix=fitz.Matrix(
-                            width / page.rect.width, height / page.rect.height
-                        ),
-                        colorspace=fitz.csRGB,
-                        alpha=False,
-                    )
-                    images.append(
-                        np.frombuffer(pix.samples, np.uint8).reshape(
-                            pix.height, pix.width, 3
-                        )
-                    )
-                unique = {}
-                for image in images:
-                    unique.setdefault(
-                        (image.shape, hashlib.sha256(image.tobytes()).digest()), image
-                    )
-                # Try intact alignment at all rotations before expensive crop
-                # synchronization. All acceptance paths require a valid HMAC.
-                for search in (False, True):
-                    for image in unique.values():
-                        for turns in range(4):
-                            try:
-                                return read_image(
-                                    np.rot90(image, turns), key, search_offsets=search
-                                )
-                            except SecretNotFoundError:
-                                continue
+            for search in (False, True):
+                for page in doc:
+                    for image in page_images(page):
+                        try:
+                            return read_image(image, key, search_offsets=search)
+                        except SecretNotFoundError:
+                            continue
         raise SecretNotFoundError(
             "No authenticated v2 watermark found: absent, damaged, or wrong key"
         )

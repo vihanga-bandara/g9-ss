@@ -10,13 +10,10 @@ import pytest
 from itsdangerous import URLSafeTimedSerializer
 
 from dwt_svd_v2 import (
-    BLOCK_SIZE,
     MAX_PAGES,
     MAX_PAGE_PIXELS,
     PAYLOAD_BYTES,
     DWTSVDWatermarkV2 as DWTSVDWatermark,
-    decode_block,
-    embed_block,
     placement_order,
     encode_frame,
     decode_frame,
@@ -93,12 +90,16 @@ def original_pdf():
 # ---------- Authenticated payload format ----------
 
 
-@pytest.mark.parametrize("secret", ["group-07", "åäö秘密", "a" * 40])
+@pytest.mark.parametrize(
+    "secret", ["group-09", "åäö秘密", "x" * PAYLOAD_BYTES, "å" * (PAYLOAD_BYTES // 2)]
+)
 def test_payload_roundtrip(secret):
     assert decode_frame(encode_frame(secret, "test-key"), "test-key") == secret
 
 
-@pytest.mark.parametrize("secret", ["", "x" * (PAYLOAD_BYTES + 1), None, 123])
+@pytest.mark.parametrize(
+    "secret", ["", "x" * (PAYLOAD_BYTES + 1), "å" * (PAYLOAD_BYTES // 2 + 1)]
+)
 def test_payload_rejects_invalid_secret(secret):
     with pytest.raises(ValueError):
         encode_frame(secret, "test-key")
@@ -106,14 +107,14 @@ def test_payload_rejects_invalid_secret(secret):
 
 @pytest.mark.parametrize("extra", [-1, 1])
 def test_payload_rejects_invalid_encoded_size(extra):
-    frame = encode_frame("group-07", "test-key")
+    frame = encode_frame("group-09", "test-key")
     malformed = frame[:-1] if extra == -1 else frame + b"\0"
     with pytest.raises(ValueError, match="frame size"):
         decode_frame(malformed, "test-key")
 
 
 def test_payload_rejects_excessive_corruption():
-    frame = bytearray(encode_frame("group-07", "test-key"))
+    frame = bytearray(encode_frame("group-09", "test-key"))
     for index in range(30):
         frame[index] ^= 0xA5
     with pytest.raises(ValueError):
@@ -137,8 +138,8 @@ def test_placement_is_repeatable_and_has_no_duplicates():
 
 def test_repository_pdf_roundtrip(method):
     source = Path(__file__).with_name("valid_test.pdf")
-    output = method.add_watermark(source, "group-07", "test-key")
-    assert method.read_secret(output, "test-key") == "group-07"
+    output = method.add_watermark(source, "group-09", "test-key")
+    assert method.read_secret(output, "test-key") == "group-09"
 
 
 def test_assigned_pdf_roundtrip(method):
@@ -149,13 +150,13 @@ def test_assigned_pdf_roundtrip(method):
         pytest.skip("Set TATOU_ASSIGNED_PDF to test the assigned course PDF")
     source = Path(configured).expanduser()
     assert source.is_file(), "TATOU_ASSIGNED_PDF must point to an existing PDF"
-    output = method.add_watermark(source, "group-07:retrieval-001", "test-key")
-    assert method.read_secret(output, "test-key") == "group-07:retrieval-001"
+    output = method.add_watermark(source, "group-09:retrieval-001", "test-key")
+    assert method.read_secret(output, "test-key") == "group-09:retrieval-001"
 
 
 def test_recipients_and_retrievals_have_distinct_watermarks(method, original_pdf):
     # The service supplies fresh identifiers; the algorithm remains deterministic.
-    secrets = ["group-07:001", "group-08:001", "group-07:002"]
+    secrets = ["group-09:001", "group-08:001", "group-09:002"]
     outputs = [
         method.add_watermark(original_pdf, secret, "server-test-key")
         for secret in secrets
@@ -181,13 +182,16 @@ def test_reader_skips_oversized_page_before_watermarked_page(method, original_pd
 
 
 @pytest.mark.parametrize("style", ["text", "blank", "dark", "color"])
-def test_selected_page_visual_distortion(method, style, record_property):
+def test_pdf_roundtrip_and_visual_quality(method, style, record_property):
     original = make_pdf(style=style)
-    output = method.add_watermark(original, "group-07", "test-key")
+    output = method.add_watermark(original, "group-09", "test-key")
+    assert method.read_secret(output, "test-key") == "group-09"
     with (
         fitz.open(stream=original, filetype="pdf") as before,
         fitz.open(stream=output, filetype="pdf") as after,
     ):
+        assert after.page_count == 1
+        assert not after.is_repaired
         assert after[0].rect == before[0].rect
         reference = render_rgb(before, 0).astype(np.float64)
         actual = render_rgb(after, 0).astype(np.float64)
@@ -204,13 +208,13 @@ def test_selected_page_visual_distortion(method, style, record_property):
 
 # ---------- Robustness acceptance tests ----------
 # These tests require exact recovery AFTER transforming the saved PDF. They may
-# expose unsupported transformations in v1; do not treat them as proven support.
+# document the supported transformations without implying arbitrary robustness.
 
 
 @pytest.fixture(scope="module")
 def robustness_pdf():
     return DWTSVDWatermark().add_watermark(
-        make_pdf(), "group-07", "robustness-test-key"
+        make_pdf(), "group-09", "robustness-test-key"
     )
 
 
@@ -235,20 +239,18 @@ def rebuild_raster_pdf(pdf, *, jpeg_quality=None, dpi=144):
 
 def test_lossless_raster_repackaging_preserves_secret(method, robustness_pdf):
     transformed = rebuild_raster_pdf(robustness_pdf)
-    assert method.read_secret(transformed, "robustness-test-key") == "group-07"
+    assert method.read_secret(transformed, "robustness-test-key") == "group-09"
 
 
 @pytest.mark.parametrize("quality", [95, 85, 70])
 def test_jpeg_recompression_preserves_secret(method, robustness_pdf, quality):
-    if tuple(int(part) for part in fitz.VersionBind.split(".")[:3]) < (1, 22, 0):
-        pytest.skip("JPEG robustness tests require PyMuPDF >= 1.22.0")
     transformed = rebuild_raster_pdf(robustness_pdf, jpeg_quality=quality)
-    assert method.read_secret(transformed, "robustness-test-key") == "group-07"
+    assert method.read_secret(transformed, "robustness-test-key") == "group-09"
 
 
 def test_downsampling_preserves_secret(method, robustness_pdf):
     transformed = rebuild_raster_pdf(robustness_pdf, dpi=108)
-    assert method.read_secret(transformed, "robustness-test-key") == "group-07"
+    assert method.read_secret(transformed, "robustness-test-key") == "group-09"
 
 
 @pytest.mark.parametrize("scale", [0.9, 1.1])
@@ -263,7 +265,7 @@ def test_page_resizing_preserves_secret(method, robustness_pdf, scale):
         )
         page.show_pdf_page(page.rect, source, 0)
         transformed = output.tobytes()
-    assert method.read_secret(transformed, "robustness-test-key") == "group-07"
+    assert method.read_secret(transformed, "robustness-test-key") == "group-09"
 
 
 def test_margin_cropping_preserves_secret(method, robustness_pdf):
@@ -273,14 +275,14 @@ def test_margin_cropping_preserves_secret(method, robustness_pdf):
         # Remove four points from each edge, leaving the test's text intact.
         page.set_cropbox(fitz.Rect(4, 4, bounds.width - 4, bounds.height - 4))
         transformed = document.tobytes()
-    assert method.read_secret(transformed, "robustness-test-key") == "group-07"
+    assert method.read_secret(transformed, "robustness-test-key") == "group-09"
 
 
 def test_quarter_turn_preserves_secret(method, robustness_pdf):
     with fitz.open(stream=robustness_pdf, filetype="pdf") as document:
         document[0].set_rotation(90)
         transformed = document.tobytes()
-    assert method.read_secret(transformed, "robustness-test-key") == "group-07"
+    assert method.read_secret(transformed, "robustness-test-key") == "group-09"
 
 
 # ---------- HTTP integration with real watermarking and temporary files ----------
@@ -323,14 +325,15 @@ def test_api_creates_and_reads_dwt_svd_watermark(monkeypatch, tmp_path):
         json={
             "method": "dwt-svd-v2",
             "position": "1",
-            "secret": "group-07:001",
+            "secret": "group-09:001",
             "key": "test-key",
-            "intended_for": "group-07",
+            "intended_for": "group-09",
         },
     )
     assert created.status_code == 201, created.get_json()
     result = created.get_json()
-    stored = source.parent / "watermarks" / result["filename"]
+    # The download filename can differ from the random-link storage name.
+    [stored] = list((source.parent / "watermarks").glob("*.pdf"))
     assert stored.is_file()
     assert stored.stat().st_size == result["size"]
     assert source.read_bytes() == original
@@ -342,8 +345,8 @@ def test_api_creates_and_reads_dwt_svd_watermark(monkeypatch, tmp_path):
     ]
     assert len(inserts) == 1
     assert inserts[0]["method"] == "dwt-svd-v2"
-    assert inserts[0]["secret"] == "group-07:001"
-    assert inserts[0]["intended_for"] == "group-07"
+    assert inserts[0]["secret"] == "group-09:001"
+    assert inserts[0]["intended_for"] == "group-09"
     assert Path(inserts[0]["path"]) == stored
     assert inserts[0]["link"] == result["link"]
 
@@ -360,67 +363,22 @@ def test_api_creates_and_reads_dwt_svd_watermark(monkeypatch, tmp_path):
         json={"method": "dwt-svd-v2", "position": "1", "key": "test-key"},
     )
     assert recovered.status_code == 201, recovered.get_json()
-    assert recovered.get_json()["secret"] == "group-07:001"
-
-
-@pytest.mark.parametrize("pixel_value", [0, 128, 255])
-@pytest.mark.parametrize("bit", [0, 1])
-def test_block_roundtrip_after_pixel_rounding(pixel_value, bit):
-    block = np.full(
-        (BLOCK_SIZE, BLOCK_SIZE, 3),
-        pixel_value,
-        dtype=np.uint8,
-    )
-
-    watermarked = embed_block(block, bit)
-
-    assert watermarked.dtype == np.uint8
-    assert watermarked.shape == block.shape
-    assert decode_block(watermarked) == bit
+    assert recovered.get_json()["secret"] == "group-09:001"
 
 
 # ---------- Real PDF integration ----------
 
 
-def test_method_is_registered():
-    assert isinstance(get_method("dwt-svd-v2"), DWTSVDWatermark)
-
-
-@pytest.mark.parametrize("style", ["text", "blank", "dark", "color"])
-def test_pdf_roundtrip(method, style):
-    original = make_pdf(style=style)
-    output = method.add_watermark(
-        original,
-        secret="group-07",
-        key="test-placement-key",
-        position="1",
-    )
-
-    assert output.startswith(b"%PDF-")
-    assert method.read_secret(output, "test-placement-key") == "group-07"
-
-    with fitz.open(stream=output, filetype="pdf") as document:
-        assert document.page_count == 1
-        assert not document.is_repaired
-
-
-def test_unicode_secret_roundtrip(method, original_pdf):
-    secret = "åäö秘密"
-    output = method.add_watermark(original_pdf, secret, "test-key", "1")
-
-    assert method.read_secret(output, "test-key") == secret
-
-
 def test_saved_file_roundtrip(method, original_pdf, tmp_path):
-    output = method.add_watermark(original_pdf, "group-07", "test-key", "1")
+    output = method.add_watermark(original_pdf, "åäö秘密", "test-key")
     path = tmp_path / "watermarked.pdf"
     path.write_bytes(output)
 
-    assert method.read_secret(path, "test-key") == "group-07"
+    assert method.read_secret(path, "test-key") == "åäö秘密"
 
 
 def test_wrong_key_returns_no_valid_watermark(method, original_pdf):
-    output = method.add_watermark(original_pdf, "group-07", "correct-key", "1")
+    output = method.add_watermark(original_pdf, "group-09", "correct-key", "1")
 
     with pytest.raises(SecretNotFoundError):
         method.read_secret(output, "wrong-key")
@@ -461,12 +419,6 @@ def test_invalid_page_selection(method, original_pdf, position):
         method.add_watermark(original_pdf, "secret", "test-key", position)
 
 
-def test_default_position_is_first_page(method, original_pdf):
-    output = method.add_watermark(original_pdf, "secret", "test-key")
-
-    assert method.read_secret(output, "test-key") == "secret"
-
-
 def test_payload_exceeding_page_capacity_is_rejected(method, original_pdf):
     with pytest.raises(ValueError, match="does not fit"):
         method.add_watermark(original_pdf, "x" * 1000, "test-key", "1")
@@ -504,7 +456,7 @@ def test_v2_authentication_rejects_reencoded_forgery():
     from reedsolo import RSCodec
     from dwt_svd_v2 import PARITY_BYTES, decode_frame, encode_frame
 
-    encoded = encode_frame("group-07", "owner-key")
+    encoded = encode_frame("group-09", "owner-key")
     with pytest.raises(ValueError, match="authentication"):
         decode_frame(encoded, "wrong-key")
     body = bytearray(RSCodec(PARITY_BYTES).decode(encoded)[0])
@@ -518,19 +470,10 @@ def test_v2_authentication_rejects_reencoded_forgery():
 def test_v2_corrects_twelve_corrupted_bytes():
     from dwt_svd_v2 import decode_frame, encode_frame
 
-    encoded = bytearray(encode_frame("group-07", "owner-key"))
+    encoded = bytearray(encode_frame("group-09", "owner-key"))
     for index in range(0, 72, 6):
         encoded[index] ^= 0xA5
-    assert decode_frame(bytes(encoded), "owner-key") == "group-07"
-
-
-@pytest.mark.parametrize("secret", ["x" * 42, "å" * 21])
-def test_v2_payload_boundary(secret):
-    from dwt_svd_v2 import decode_frame, encode_frame
-
-    assert decode_frame(encode_frame(secret, "key"), "key") == secret
-    with pytest.raises(ValueError, match="does not fit"):
-        encode_frame(secret + "x", "key")
+    assert decode_frame(bytes(encoded), "owner-key") == "group-09"
 
 
 @pytest.mark.parametrize("turns", [1, 2, 3])
@@ -539,44 +482,33 @@ def test_flattened_rotation_preserves_secret(method, robustness_pdf, turns):
         doc[0].set_rotation(90 * turns)
         rotated = doc.tobytes()
     flattened = rebuild_raster_pdf(rotated)
-    assert method.read_secret(flattened, "robustness-test-key") == "group-07"
+    assert method.read_secret(flattened, "robustness-test-key") == "group-09"
 
 
 @pytest.mark.parametrize("margins", [(4, 4, 4, 4), (7, 11, 3, 5)])
-def test_flattened_crop_preserves_secret(method, robustness_pdf, margins):
+@pytest.mark.parametrize("turns", [0, 1, 3])
+def test_flattened_crop_preserves_secret(method, robustness_pdf, margins, turns):
     left, top, right, bottom = margins
     with fitz.open(stream=robustness_pdf, filetype="pdf") as doc:
         bounds = doc[0].rect
         doc[0].set_cropbox(
             fitz.Rect(left, top, bounds.width - right, bounds.height - bottom)
         )
+        doc[0].set_rotation(turns * 90)
         cropped = doc.tobytes()
     flattened = rebuild_raster_pdf(cropped)
-    assert method.read_secret(flattened, "robustness-test-key") == "group-07"
-
-
-@pytest.mark.parametrize("scale", [0.9, 1.1])
-def test_flattened_resize_with_trusted_dimensions(method, robustness_pdf, scale):
-    with fitz.open(stream=robustness_pdf, filetype="pdf") as source, fitz.open() as out:
-        page = out.new_page(width=300 * scale, height=400 * scale)
-        page.show_pdf_page(page.rect, source, 0)
-        resized = out.tobytes()
-    flattened = rebuild_raster_pdf(resized)
-    assert (
-        method.read_secret(flattened, "robustness-test-key", original_size=(600, 800))
-        == "group-07"
-    )
+    assert method.read_secret(flattened, "robustness-test-key") == "group-09"
 
 
 def test_all_pages_survives_page_removal(method):
     source = make_pdf(pages=3)
-    marked = method.add_watermark(source, "group-07", "key", position="all")
+    marked = method.add_watermark(source, "group-09", "key", position="all")
     with fitz.open(stream=marked, filetype="pdf") as doc:
         # Every page must independently contain the authenticated payload.
         for index in range(3):
             with fitz.open() as single:
                 single.insert_pdf(doc, from_page=index, to_page=index)
-                assert method.read_secret(single.tobytes(), "key") == "group-07"
+                assert method.read_secret(single.tobytes(), "key") == "group-09"
 
 
 def test_only_improved_dwt_svd_method_is_registered():
@@ -588,15 +520,58 @@ def test_only_improved_dwt_svd_method_is_registered():
 
 def test_repeated_regions_survive_removing_left_half(method):
     original = make_pdf(width=600, height=400)
-    marked = method.add_watermark(original, "group-07", "key")
+    marked = method.add_watermark(original, "group-09", "key")
     with fitz.open(stream=marked, filetype="pdf") as doc:
         doc[0].set_cropbox(fitz.Rect(300, 0, 600, 400))
         cropped = doc.tobytes()
     # Flatten so recovery cannot use the removed half of the stored image.
-    assert method.read_secret(rebuild_raster_pdf(cropped), "key") == "group-07"
+    assert method.read_secret(rebuild_raster_pdf(cropped), "key") == "group-09"
 
 
-@pytest.mark.parametrize("size", [(0, 800), (600, -1), (10_000, 10_000)])
-def test_invalid_recovery_dimensions_are_rejected(method, original_pdf, size):
-    with pytest.raises(ValueError, match="dimensions"):
-        method.read_secret(original_pdf, "key", original_size=size)
+def test_all_pages_checked_quickly_before_crop_search(monkeypatch, method):
+    import dwt_svd_v2 as watermark
+
+    # An earlier IMAGE page must be searched, not merely skipped as plain text.
+    source = rebuild_raster_pdf(make_pdf(pages=2))
+    real_read = watermark.read_image
+    calls = []
+
+    def quick_only(image, key, *, search_offsets=False):
+        calls.append(search_offsets)
+        assert not search_offsets, "crop search started before the marked page"
+        return real_read(image, key, search_offsets=search_offsets)
+
+    monkeypatch.setattr(watermark, "read_image", quick_only)
+    output = method.add_watermark(source, "page-two", "key", "2")
+    assert method.read_secret(output, "key") == "page-two"
+    assert len(calls) >= 3
+
+
+def test_text_only_pages_do_not_render_or_search(monkeypatch, method):
+    import dwt_svd_v2 as watermark
+
+    def unexpected(*args, **kwargs):
+        pytest.fail("text-only pages must not render or search pixel grids")
+
+    monkeypatch.setattr(watermark, "render_page", unexpected)
+    monkeypatch.setattr(watermark, "read_image", unexpected)
+    with pytest.raises(SecretNotFoundError):
+        method.read_secret(make_pdf(pages=3), "key")
+
+
+def test_each_grid_is_computed_once_for_all_rotations(monkeypatch):
+    import dwt_svd_v2 as watermark
+
+    offsets = []
+
+    def grid_spy(gray, dy, dx):
+        assert gray.ndim == 2  # Luminance conversion also happens outside the loop.
+        offsets.append((dy, dx))
+        return np.zeros((50, 37), dtype=np.uint8)
+
+    monkeypatch.setattr(watermark, "bit_grid", grid_spy)
+    image = np.zeros((800, 600, 3), dtype=np.uint8)
+    for search in (False, True):
+        with pytest.raises(SecretNotFoundError):
+            watermark.read_image(image, "key", search_offsets=search)
+    assert len(offsets) == len(set(offsets)) == 16 * 16

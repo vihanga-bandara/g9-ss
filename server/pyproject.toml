@@ -2,7 +2,7 @@
 name = "Tatou-Server"
 version = "0.0.1"
 description = "PDF Watermarking platform"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
 	"PyMuPDF>=1.24.2",
 	"Flask==3.1.3",
@@ -10,8 +10,8 @@ dependencies = [
 	"gunicorn==26.2.0",
 	"PyMySQL==1.1.2",
 	"SQLAlchemy==2.0.43",
-	"numpy",
-	"PyWavelets",
+	"numpy==2.5.3",
+	"PyWavelets==1.10.0",
 	"reedsolo==1.7.0",
 ]
 
