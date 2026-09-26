@@ -9,6 +9,7 @@ from sqlalchemy import create_engine
 import auth
 import documents
 import pages
+import rmap_routes
 import watermarks
 from auth_service import AuthService
 from document_service import DocumentService
@@ -65,6 +66,21 @@ def create_app() -> Flask:
     app.register_blueprint(auth.create_blueprint(auth_service))
     app.register_blueprint(documents.create_blueprint(document_service, require_auth))
     app.register_blueprint(watermarks.create_blueprint(watermark_service, require_auth))
+
+    rmap_keys_dir = os.environ.get("RMAP_KEYS_DIR")
+    if rmap_keys_dir:
+        rmap_server = rmap_routes.load_rmap_server(
+            Path(rmap_keys_dir), os.environ.get("RMAP_PASSPHRASE")
+        )
+        rmap_settings = rmap_routes.RmapSettings(
+            owner_id=int(os.environ["RMAP_OWNER_ID"]),
+            document_id=int(os.environ["RMAP_DOCUMENT_ID"]),
+            method=os.environ["RMAP_METHOD"],
+            watermark_key=os.environ["RMAP_WATERMARK_KEY"],
+        )
+        app.register_blueprint(
+            rmap_routes.create_blueprint(rmap_server, watermark_service, rmap_settings)
+        )
 
     return app
 
