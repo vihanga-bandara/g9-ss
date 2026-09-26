@@ -1,30 +1,19 @@
+from pathlib import Path
+
+import pymupdf
 import pytest
 
 from TeosRepeatedWatermark import TeosRepeatedWatermark
-from pathlib import Path
-from watermarking_method import InvalidKeyError
-from watermarking_method import SecretNotFoundError
-from watermarking_method import WatermarkingError
-import pymupdf
+from watermarking_method import (
+    InvalidKeyError,
+    SecretNotFoundError,
+    WatermarkingError,
+)
+
+
 pdf_path = Path(__file__).parent / "valid_test.pdf"
 method = TeosRepeatedWatermark()
-output_path = Path(__file__).parent / "teos_watermarked_test.pdf"
 
-
-
-def test_teos_watermark_loop():
-    result = method.add_watermark(
-        pdf=pdf_path,
-        secret="TEO_TEST",
-        key="test-key",
-    )
-    output_path.write_bytes(result)
-
-    recovered = method.read_secret(
-        pdf=result,
-        key="test-key",
-    )
-    assert recovered == "TEO_TEST"
 
 def test_read_secret_without_watermark_raises():
     with pytest.raises(SecretNotFoundError):
@@ -33,8 +22,9 @@ def test_read_secret_without_watermark_raises():
             key="test-key",
         )
 
+
 def test_read_secret_with_wrong_key_raises():
-    valid_pdf = method.add_watermark(
+    watermarked_pdf = method.add_watermark(
         pdf=pdf_path,
         secret="TEO_TEST",
         key="right_key",
@@ -42,20 +32,22 @@ def test_read_secret_with_wrong_key_raises():
 
     with pytest.raises(InvalidKeyError):
         method.read_secret(
-            pdf=valid_pdf,
+            pdf=watermarked_pdf,
             key="wrong_key",
         )
 
+
 def test_watermark_survives_removed_page():
-    valid_pdf = method.add_watermark(
+    watermarked_pdf = method.add_watermark(
         pdf=pdf_path,
         secret="TEO_TEST",
         key="test-key",
     )
+
     doc = None
     try:
         doc = pymupdf.open(
-            stream=valid_pdf,
+            stream=watermarked_pdf,
             filetype="pdf",
         )
         doc.delete_page(0)
@@ -68,7 +60,9 @@ def test_watermark_survives_removed_page():
         pdf=modified_pdf,
         key="test-key",
     )
+
     assert recovered == "TEO_TEST"
+
 
 def test_watermark_survives_single_page_extraction():
     watermarked_pdf = method.add_watermark(
@@ -99,6 +93,7 @@ def test_watermark_survives_single_page_extraction():
     finally:
         if single_page_doc is not None:
             single_page_doc.close()
+
         if source_doc is not None:
             source_doc.close()
 
@@ -109,27 +104,6 @@ def test_watermark_survives_single_page_extraction():
 
     assert recovered == "TEO_TEST"
 
-def test_watermark_survival_if_rasterized():
-    doc = None
-    page = None
-    valid_pdf = method.add_watermark(
-        pdf=pdf_path,
-        secret="TEO_TEST",
-        key="test-key",
-    )
-    try:
-        doc = pymupdf.open(
-            stream=valid_pdf,
-            filetype="pdf",
-        )
-
-
-
-    finally:
-        if doc is not None:
-            doc.close()
-
-
 
 def test_conflicting_authenticated_watermarks_raise():
     first_watermark = method.add_watermark(
@@ -137,20 +111,24 @@ def test_conflicting_authenticated_watermarks_raise():
         secret="FIRST_SECRET",
         key="test-key",
     )
+
     second_watermark = method.add_watermark(
         pdf=first_watermark,
         secret="SECOND_SECRET",
         key="test-key",
     )
+
     with pytest.raises(WatermarkingError):
         method.read_secret(
             pdf=second_watermark,
             key="test-key",
         )
 
+
 @pytest.mark.parametrize(
     "position",
     [
+        None,
         "top-left",
         "top-right",
         "center",
@@ -173,6 +151,35 @@ def test_secret_positioning(position):
 
     assert recovered == "TEO_TEST"
 
+
+@pytest.mark.parametrize(
+    "position",
+    [
+        "top-right",
+        "bottom-right",
+    ],
+)
+def test_watermark_on_rotated_page(position):
+    with pymupdf.open(pdf_path) as doc:
+        page = doc.load_page(0)
+        page.set_rotation(90)
+        rotated_pdf = doc.tobytes(no_new_id=True)
+
+    result = method.add_watermark(
+        pdf=rotated_pdf,
+        secret="TEO_TEST",
+        key="test-key",
+        position=position,
+    )
+
+    recovered = method.read_secret(
+        pdf=result,
+        key="test-key",
+    )
+
+    assert recovered == "TEO_TEST"
+
+
 def test_empty_secret_rejected():
     with pytest.raises(WatermarkingError):
         method.add_watermark(
@@ -181,3 +188,20 @@ def test_empty_secret_rejected():
             key="test-key",
         )
 
+
+def test_watermark_is_deterministic():
+    first_result = method.add_watermark(
+        pdf=pdf_path,
+        secret="TEO_TEST",
+        key="test-key",
+        position="center",
+    )
+
+    second_result = method.add_watermark(
+        pdf=pdf_path,
+        secret="TEO_TEST",
+        key="test-key",
+        position="center",
+    )
+
+    assert first_result == second_result

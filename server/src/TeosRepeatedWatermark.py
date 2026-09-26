@@ -117,14 +117,32 @@ class TeosRepeatedWatermark(WatermarkingMethod):
         try:
             for page_index in range(doc.page_count):
                 page = doc.load_page(page_index)
-                width = page.rect.width
-                height = page.rect.height
+
+
+                area = page.rect * page.derotation_matrix
                 margin = 50
-                top_left = (margin, margin)
-                top_right = (width - margin, margin)
-                center = (width / 2, height / 2)
-                bottom_left = (margin, height - margin)
-                bottom_right = (width - margin, height - margin)
+
+                top_left = (
+                    area.x0 + margin,
+                    area.y0 + margin,
+                )
+                top_right = (
+                    area.x1 - margin,
+                    area.y0 + margin,
+                )
+                center = (
+                    (area.x0 + area.x1) / 2,
+                    (area.y0 + area.y1) / 2,
+                )
+                bottom_left = (
+                    area.x0 + margin,
+                    area.y1 - margin,
+                )
+                bottom_right = (
+                    area.x1 - margin,
+                    area.y1 - margin,
+                )
+
                 coordinates = {
                     "top-left": top_left,
                     "top-right": top_right,
@@ -132,12 +150,16 @@ class TeosRepeatedWatermark(WatermarkingMethod):
                     "bottom-left": bottom_left,
                     "bottom-right": bottom_right,
                 }
+
                 selected_position = coordinates[position]
 
                 page.insert_text(
-                    selected_position, new_secret, fontsize=0.001, render_mode=3
+                    selected_position,
+                    new_secret,
+                    fontsize=0.001,
+                    render_mode=3,
                 )
-            watermarked_pdf = doc.tobytes()
+            watermarked_pdf = doc.tobytes(no_new_id=True)
             return watermarked_pdf
         except Exception as exc:
             raise WatermarkingError("Failed to add watermark") from exc
