@@ -78,8 +78,9 @@ def test_watermark_failures_preserve_messages(
         SimpleNamespace(name="report"),
         tmp_path / "report.pdf",
     )
+    logger = Mock()
     engine = Mock()
-    service = WatermarkService(engine, documents)
+    service = WatermarkService(engine, documents, logger)
     monkeypatch.setattr(
         "watermark_service.WMUtils.is_watermarking_applicable", lambda **kw: applicable
     )

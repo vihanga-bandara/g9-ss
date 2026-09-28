@@ -19,6 +19,7 @@ def watermark(tmp_path, monkeypatch):
     engine.connect.return_value.__enter__.return_value = connection
     get_engine = Mock(return_value=engine)
     documents = Mock()
+    logger = Mock()
     source = tmp_path / "report.pdf"
     source.write_bytes(b"original")
     documents.get_document.return_value = (SimpleNamespace(name="report.pdf"), source)
@@ -30,8 +31,8 @@ def watermark(tmp_path, monkeypatch):
     for name, worker in workers.items():
         monkeypatch.setattr(f"watermark_service.WMUtils.{name}", worker)
     return SimpleNamespace(
-        service=WatermarkService(get_engine, documents),
-        get_engine=get_engine, documents=documents, connection=connection,
+        service=WatermarkService(get_engine, documents,logger),
+        get_engine=get_engine, documents=documents, logger =logger, connection=connection,
         source=source, workers=workers,
     )
 
@@ -94,6 +95,12 @@ def test_create_watermark_saves_algorithm_output_and_version(watermark, payload)
         "size": len(b"watermarked PDF"),
     }
 
+    watermark.logger.info.assert_called_once_with(
+        "watermark issuance: version_id=%s document_id=%s outcome=success",
+        9,
+        7,
+    )
+
 
 @pytest.mark.parametrize(
     "worker,status", [("is_watermarking_applicable", 400), ("apply_watermark", 500)]
@@ -137,11 +144,31 @@ def test_unknown_version_does_not_access_storage(watermark):
     assert failure.value.status_code == 404
     watermark.documents.check_stored_file.assert_not_called()
 
+    watermark.logger.warning.assert_called_once_with(
+        "watermark access: outcome=failure reason=version_not_found"
+    )
 
 def test_get_version_checks_stored_path(watermark):
-    row = SimpleNamespace(path=str(watermark.source))
+    row = SimpleNamespace(id=1, documentid=7,path=str(watermark.source))
     watermark.connection.execute.return_value.first.return_value = row
     watermark.documents.check_stored_file.return_value = watermark.source
     assert watermark.service.get_version("test-link") == (row, watermark.source)
     watermark.documents.check_stored_file.assert_called_once_with(row.path)
     assert watermark.connection.execute.call_args.args[1] == {"link": "test-link"}
+
+def test_get_version_logs_successful_access(watermark):
+    row = SimpleNamespace(
+        id=1,
+        documentid=7,
+        path=str(watermark.source),
+    )
+    watermark.connection.execute.return_value.first.return_value = row
+    watermark.documents.check_stored_file.return_value = watermark.source
+
+    watermark.service.get_version("test-link")
+
+    watermark.logger.info.assert_called_once_with(
+        "watermark access: version_id=%s document_id=%s outcome=success",
+        row.id,
+        row.documentid,
+    )
