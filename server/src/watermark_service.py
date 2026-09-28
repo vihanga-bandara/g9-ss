@@ -1,6 +1,6 @@
 """Watermark operations and the persisted versions they produce."""
 
-import secrets
+import hashlib
 from pathlib import Path
 from typing import Any
 
@@ -157,8 +157,8 @@ class WatermarkService:
         dest_dir.mkdir(parents=True, exist_ok=True)
 
         candidate = f"{base_name}__{intended_slug}.pdf"
-        # Random so links can't be guessed; files named after it never collide.
-        link_token = link or secrets.token_hex(16)
+        # link token = sha1(watermarked_file_name)
+        link_token = link or hashlib.sha1(candidate.encode("utf-8")).hexdigest()
         dest_path = dest_dir / f"{link_token}.pdf"
 
         # reserve the row first: a failed insert must not touch an existing file
