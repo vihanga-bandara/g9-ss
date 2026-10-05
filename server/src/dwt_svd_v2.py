@@ -13,6 +13,9 @@ The core idea is: each 16×16 image block carries one bit;
 DWT selects the low-frequency image information,
 SVD gives a stable numerical feature, and the parity of the quantized largest
 singular value represents 0 or 1.
+Smooth blocks use lower quantization strength to reduce background checkerboards;
+textured blocks retain the original strength. Extraction tries both the adaptive
+profile and the original fixed-strength profile for existing PDFs.
 Everything else—Reed-Solomon, HMAC, synchronization, keyed placement, repetition,
 and rotation/alignment search—makes that basic idea more reliable and secure.
 
@@ -50,8 +53,11 @@ MAX_PAGE_PIXELS = 12_000_000
 ## Watermark grid: 32x24 blocks = 768 bits.
 ROWS, COLS = 32, 24
 HEIGHT, WIDTH = ROWS * 16, COLS * 16
-# Payload and error-correction sizes.
+# Keep the original strength for detailed blocks and legacy PDF recovery.
 STEP = 96.0
+# Flat backgrounds need much smaller brightness changes to avoid visible tiles.
+SMOOTH_STEP = 32.0
+SMOOTH_STD_LIMIT = 12.0
 # payload and error-correction sizes.
 PAYLOAD_BYTES = 42
 DATA_BYTES = 64
@@ -79,7 +85,9 @@ def singular_value(rgb: np.ndarray) -> float:
 
 
 # embedding and reading the watermark in the image
-def embed_block(rgb: np.ndarray, bit: int, step=STEP) -> np.ndarray:
+def embed_block(
+    rgb: np.ndarray, bit: int, step=STEP, *, smooth_profile: bool | None = None
+) -> np.ndarray:
     """Quantize the largest LL singular value to an even/odd level.
 
     Test the rounded RGB result, since clipping and pixel rounding
@@ -117,6 +125,10 @@ def embed_block(rgb: np.ndarray, bit: int, step=STEP) -> np.ndarray:
         candidate = np.clip(np.rint(original + delta[..., None]), 0, 255).astype(
             np.uint8
         )
+        if smooth_profile is not None:
+            observed_smooth = float(np.std(luminance(candidate))) < SMOOTH_STD_LIMIT
+            if observed_smooth != smooth_profile:
+                continue
 
         observed = singular_value(candidate) / step
         level = math.floor(observed + 0.5)
@@ -134,6 +146,24 @@ def embed_block(rgb: np.ndarray, bit: int, step=STEP) -> np.ndarray:
         raise WatermarkingError("Could not reliably embed a bit in a selected block")
 
     return best
+
+
+def embed_adaptive_block(rgb: np.ndarray, bit: int) -> np.ndarray:
+    """Reduce flat-area distortion while retaining strength around text/detail.
+
+    The reader derives the same profile from pixel contrast, so verify that
+    embedding did not move this block across the contrast threshold.
+    """
+    smooth = float(np.std(luminance(rgb))) < SMOOTH_STD_LIMIT
+    for use_smooth in (smooth, not smooth):
+        try:
+            return embed_block(
+                rgb, bit, step=SMOOTH_STEP if use_smooth else STEP,
+                smooth_profile=use_smooth,
+            )
+        except WatermarkingError:
+            continue
+    raise WatermarkingError("Could not reliably select a block strength")
 
 
 # ============================================================
@@ -258,12 +288,12 @@ def embed_image(image, frame, key):
             block = image[
                 y + row * 16 : y + (row + 1) * 16, x + col * 16 : x + (col + 1) * 16
             ]
-            block[:] = embed_block(block, int(bit), step=STEP)
+            block[:] = embed_adaptive_block(block, int(bit))
     return image
 
 
 ## Decode all 16x16 blocks into a grid of candidate watermark bits.
-def bit_grid(image, dy, dx):
+def bit_grid(image, dy, dx, *, include_legacy=False):
     h = (image.shape[0] - dy) // 16
     w = (image.shape[1] - dx) // 16
     if not ((h >= ROWS and w >= COLS) or (h >= COLS and w >= ROWS)):
@@ -275,7 +305,17 @@ def bit_grid(image, dy, dx):
     ll = (y[::2, ::2] + y[1::2, ::2] + y[::2, 1::2] + y[1::2, 1::2]) / 2
     blocks = ll.reshape(h, 8, w, 8).transpose(0, 2, 1, 3)
     singular = np.linalg.svd(blocks, compute_uv=False)[..., 0]
-    return (np.floor(singular / STEP + 0.5).astype(np.int64) % 2).astype(np.uint8)
+    contrast = np.std(y.reshape(h, 16, w, 16), axis=(1, 3))
+    steps = np.where(contrast < SMOOTH_STD_LIMIT, SMOOTH_STEP, STEP)
+    adaptive = (np.floor(singular / steps + 0.5).astype(np.int64) % 2).astype(
+        np.uint8
+    )
+    if not include_legacy:
+        return adaptive
+    # Old PDFs used STEP everywhere. Share the expensive SVD between profiles;
+    # only an authenticated payload is accepted from either candidate grid.
+    legacy = (np.floor(singular / STEP + 0.5).astype(np.int64) % 2).astype(np.uint8)
+    return adaptive, legacy
 
 
 def quick_offsets(height, width):
@@ -332,13 +372,14 @@ def read_image(image, key, *, search_offsets=False):
     # Convert once; each grid/SVD is shared by all four orientations.
     gray = luminance(image)
     for dy, dx in offsets:
-        grid = bit_grid(gray, dy, dx)
-        if grid is None:
+        grids = bit_grid(gray, dy, dx, include_legacy=True)
+        if grids is None:
             continue
-        try:
-            return read_grid(grid, order, key)
-        except SecretNotFoundError:
-            continue
+        for grid in grids:
+            try:
+                return read_grid(grid, order, key)
+            except SecretNotFoundError:
+                continue
     raise SecretNotFoundError("No authenticated v2 watermark found")
 
 
@@ -390,15 +431,22 @@ class DWTSVDWatermarkV2(WatermarkingMethod):
 
     @staticmethod
     def _page_index(position: str | None, page_count: int) -> int:
+        if isinstance(position, str):
+            position = position.strip() or None
         if position is None:
             number = 1
         elif isinstance(position, str) and position.isdecimal():
             number = int(position)
         else:
-            raise ValueError("position must be a one-based page number")
+            raise ValueError(
+                "DWT-SVD position must be a one-based page number (e.g. '1'), "
+                "'all', or blank for page 1"
+            )
 
         if not 1 <= number <= page_count:
-            raise ValueError("selected page does not exist")
+            raise ValueError(
+                f"selected page does not exist; choose a page from 1 to {page_count}"
+            )
         return number - 1
 
     @staticmethod
@@ -413,22 +461,40 @@ class DWTSVDWatermarkV2(WatermarkingMethod):
         return (
             "Authenticated DWT-SVD v2; maximum 42 UTF-8 bytes. Position is a "
             "one-based page number (default 1), or all for every fitting page. "
+            "PDFs must have 1–32 pages and no password protection. Selected "
+            "pages need at least 192 x 256 points and at most 12 million "
+            "rendered pixels at 144 DPI. "
             "Marked pages are rasterized. Keep the supplied key private. "
             "Supports bounded recovery; not arbitrary geometric distortion."
         )
 
     def is_watermark_applicable(self, pdf, position=None):
         try:
-            with fitz.open(stream=load_pdf_bytes(pdf), filetype="pdf") as doc:
-                self._validate_document(doc)
-                indices = (
-                    range(len(doc))
-                    if position == "all"
-                    else [self._page_index(position, len(doc))]
-                )
-                return any(self._fits(doc[i]) for i in indices)
+            return self.check_applicability(pdf, position)
         except (ValueError, RuntimeError):
             return False
+
+    def check_applicability(self, pdf, position=None):
+        if isinstance(position, str):
+            position = position.strip() or None
+        with fitz.open(stream=load_pdf_bytes(pdf), filetype="pdf") as doc:
+            self._validate_document(doc)
+            if position == "all":
+                if any(self._fits(page) for page in doc):
+                    return True
+                raise ValueError(
+                    "No page has sufficient watermark capacity within the "
+                    f"{MAX_PAGE_PIXELS:,}-pixel rendering limit"
+                )
+            page = doc[self._page_index(position, len(doc))]
+            image = render_page(page)
+            if not origins(image):
+                raise ValueError(
+                    "Selected page is too small for DWT-SVD: needs at least "
+                    "192 x 256 PDF points (384 x 512 pixels at 144 DPI); "
+                    "select a larger page or use position 'all'"
+                )
+            return True
 
     @staticmethod
     def _fits(page):
@@ -438,6 +504,8 @@ class DWTSVDWatermarkV2(WatermarkingMethod):
             return False
 
     def add_watermark(self, pdf, secret, key, position=None):
+        if isinstance(position, str):
+            position = position.strip() or None
         # Create the authenticated and error-corrected watermark payload.
         frame = encode_frame(secret, key)
         with (

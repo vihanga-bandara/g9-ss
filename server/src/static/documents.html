@@ -238,9 +238,10 @@
         const payload = Object.fromEntries(fd.entries());
         try {
           const r = await apiFetchJSON(`/api/create-watermark/${documentId}`, 'POST', payload);
-          if (!r.ok) throw new Error('HTTP ' + r.status);
           const data = await r.json();
+          if (!r.ok) throw new Error(data.error || 'HTTP ' + r.status);
           openModal('Watermark created', `<p>Version created for document <strong>#${data.documentid}</strong>.</p>
+            <p>To read this watermark, download this version and upload it as a new document, then choose Read watermark with the same method and key.</p>
             <p><strong>Link:</strong> <code class="mono">${escapeHtml(data.link)}</code></p>
             <div class="row-actions"><button class="btn" data-open-version="${data.link}">Open version</button></div>`);
         } catch(err){
@@ -254,6 +255,7 @@
       const options = methods.map(m => `<option value="${escapeHtml(m.name)}">${escapeHtml(m.name)} — ${escapeHtml(m.description||'')}</option>`).join('');
       openModal('Read watermark for #' + documentId, `
         <form id="readWmForm" class="form-vertical">
+          <p>This reads the selected uploaded document. Creating a watermark saves a separate version; download and upload that version first to read its watermark.</p>
           <label>Method<select name="method" required><option value="" disabled selected>Select a method</option>${options}</select></label>
           <label>Position<input name="position" placeholder="Position"></label>
           <label>Key<input name="key" placeholder="Reader key" required></label>
@@ -270,8 +272,8 @@
         const payload = Object.fromEntries(fd.entries());
         try {
           const r = await apiFetchJSON(`/api/read-watermark/${documentId}`, 'POST', payload);
-          if (!r.ok) throw new Error('HTTP ' + r.status);
           const data = await r.json();
+          if (!r.ok) throw new Error(data.error || 'HTTP ' + r.status);
           openModal('Watermark data', `<pre class="pre">${escapeHtml(JSON.stringify(data, null, 2))}</pre>`);
         } catch(err){
           alert('Read failed: ' + err.message);
@@ -302,4 +304,3 @@
   </script>
 </body>
 </html>
-
