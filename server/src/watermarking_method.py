@@ -259,6 +259,12 @@ class WatermarkingMethod(ABC):
         """
         raise NotImplementedError
 
+    def check_applicability(
+        self, pdf: PdfSource, position: str | None = None
+    ) -> bool:
+        """Check applicability, optionally raising an actionable validation error."""
+        return self.is_watermark_applicable(pdf, position)
+
     @abstractmethod
     def read_secret(self, pdf: PdfSource, key: str) -> str:
         """Extract and return the embedded secret from ``pdf``.
@@ -296,4 +302,3 @@ __all__ = [
     "is_pdf_bytes",
     "load_pdf_bytes",
 ]
-

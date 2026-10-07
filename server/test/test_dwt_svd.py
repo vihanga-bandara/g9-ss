@@ -133,6 +133,28 @@ def test_placement_is_repeatable_and_has_no_duplicates():
     assert first != placement_order(100, "key-two")
 
 
+def test_adaptive_blocks_remain_decodable_near_contrast_threshold():
+    from dwt_svd_v2 import (
+        SMOOTH_STD_LIMIT, SMOOTH_STEP, STEP,
+        embed_adaptive_block, luminance, singular_value,
+    )
+
+    rng = np.random.default_rng(9)
+    for contrast in (0, 5, 11.5, 11.9, 12, 12.1, 12.5, 20, 60):
+        for bit in (0, 1):
+            for _ in range(20):
+                gray = np.clip(
+                    np.rint(128 + rng.normal(0, contrast, (16, 16))), 0, 255
+                ).astype(np.uint8)
+                rgb = np.repeat(gray[..., None], 3, axis=2)
+                result = embed_adaptive_block(rgb, bit)
+                step = (
+                    SMOOTH_STEP
+                    if np.std(luminance(result)) < SMOOTH_STD_LIMIT else STEP
+                )
+                assert int(np.floor(singular_value(result) / step + 0.5)) % 2 == bit
+
+
 # ---------- Project document and recipient attribution ----------
 
 
@@ -207,6 +229,50 @@ def test_pdf_roundtrip_and_visual_quality(method, style, record_property):
 
 
 # ---------- Robustness acceptance tests ----------
+@pytest.mark.parametrize("style", ["blank", "text"])
+def test_white_background_distortion_is_bounded(method, style):
+    original = make_pdf(style=style)
+    output = method.add_watermark(original, "background-test", "test-key")
+    with (
+        fitz.open(stream=original, filetype="pdf") as before,
+        fitz.open(stream=output, filetype="pdf") as after,
+    ):
+        reference = render_rgb(before, 0)
+        actual = render_rgb(after, 0)
+    # Inspect all entirely white carrier blocks, including whitespace behind
+    # paragraphs. Whole-page PSNR alone missed the original checkerboard.
+    from dwt_svd_v2 import origins, ROWS, COLS
+
+    block_means = []
+    for y, x in origins(reference):
+        for row in range(ROWS):
+            for col in range(COLS):
+                region = np.s_[y + row * 16:y + (row + 1) * 16,
+                               x + col * 16:x + (col + 1) * 16]
+                if np.all(reference[region] == 255):
+                    assert int(actual[region].min()) >= 252
+                    block_means.append(float(actual[region].mean()))
+    assert block_means
+    assert max(block_means) - min(block_means) <= 2
+    assert method.read_secret(output, "test-key") == "background-test"
+
+
+@pytest.mark.parametrize("flatten", [False, True])
+def test_legacy_strength_watermarks_remain_readable(method, monkeypatch, flatten):
+    import dwt_svd_v2 as watermark
+
+    # Generate the old on-disk format: every block uses strength 96.
+    with monkeypatch.context() as legacy:
+        legacy.setattr(watermark, "embed_adaptive_block", watermark.embed_block)
+        output = method.add_watermark(make_pdf(), "legacy", "old-key")
+    if flatten:
+        with fitz.open(stream=output, filetype="pdf") as document:
+            document[0].set_rotation(90)
+            output = document.tobytes()
+        output = rebuild_raster_pdf(output, jpeg_quality=85)
+    assert method.read_secret(output, "old-key") == "legacy"
+
+
 # These tests require exact recovery AFTER transforming the saved PDF. They may
 # document the supported transformations without implying arbitrary robustness.
 
@@ -288,7 +354,8 @@ def test_quarter_turn_preserves_secret(method, robustness_pdf):
 # ---------- HTTP integration with real watermarking and temporary files ----------
 
 
-def test_api_creates_and_reads_dwt_svd_watermark(monkeypatch, tmp_path):
+@pytest.mark.parametrize("position", [None, "1", "all", " 1 ", " all "])
+def test_api_creates_and_reads_dwt_svd_watermark(monkeypatch, tmp_path, position):
     # Only the database is mocked; authentication, services, registry, algorithm,
     # and file storage use the real application. This is not an RMAP test.
     monkeypatch.setenv("STORAGE_DIR", str(tmp_path))
@@ -319,12 +386,38 @@ def test_api_creates_and_reads_dwt_svd_watermark(monkeypatch, tmp_path):
     assert listing.status_code == 200
     assert "dwt-svd-v2" in {m["name"] for m in listing.get_json()["methods"]}
 
+    # Exercise actual applicability failures through the HTTP/service boundary.
+    for rejected_pdf, rejected_position, reason in [
+        (original, "center", "one-based page number"),
+        (original, "2", "choose a page from 1 to 1"),
+        (make_pdf(pages=MAX_PAGES + 1), "1", "between 1 and 32 pages"),
+        (make_pdf(width=36, height=36), "1", "Selected page is too small"),
+        (make_pdf(width=36, height=36), "all", "No page has sufficient"),
+        (make_pdf(width=2000, height=2000), "1", "rendering pixel limit"),
+    ]:
+        source.write_bytes(rejected_pdf)
+        rejected = client.post(
+            "/api/create-watermark/7",
+            headers=headers,
+            json={
+                "method": "dwt-svd-v2",
+                "position": rejected_position,
+                "secret": "group-09:001",
+                "key": "test-key",
+                "intended_for": "group-09",
+            },
+        )
+        assert rejected.status_code == 400
+        assert reason in rejected.get_json()["error"]
+        assert not (source.parent / "watermarks").exists()
+    source.write_bytes(original)
+
     created = client.post(
         "/api/create-watermark/7",
         headers=headers,
         json={
             "method": "dwt-svd-v2",
-            "position": "1",
+            "position": position,
             "secret": "group-09:001",
             "key": "test-key",
             "intended_for": "group-09",
@@ -350,10 +443,26 @@ def test_api_creates_and_reads_dwt_svd_watermark(monkeypatch, tmp_path):
     assert Path(inserts[0]["path"]) == stored
     assert inserts[0]["link"] == result["link"]
 
+    # Reading the original must not silently return a separate version's secret.
+    unmarked = client.post(
+        "/api/read-watermark/7",
+        headers=headers,
+        json={"method": "dwt-svd-v2", "key": "test-key"},
+    )
+    assert unmarked.status_code == 400
+    assert "No authenticated v2 watermark found" in unmarked.get_json()["error"]
+
+    connection.execute.return_value.first.return_value = SimpleNamespace(
+        path=str(stored), link=result["link"]
+    )
+    downloaded = client.get(f"/api/get-version/{result['link']}")
+    assert downloaded.status_code == 200
+    assert downloaded.data == stored.read_bytes()
+
     # read-watermark reads an uploaded document, not a Versions row. Simulate
     # the generated PDF being uploaded as a new document owned by this user.
     leaked = source.parent / "leaked.pdf"
-    leaked.write_bytes(stored.read_bytes())
+    leaked.write_bytes(downloaded.data)
     connection.execute.return_value.first.return_value = SimpleNamespace(
         id=8, name="leaked", path=str(leaked)
     )
@@ -564,10 +673,12 @@ def test_each_grid_is_computed_once_for_all_rotations(monkeypatch):
 
     offsets = []
 
-    def grid_spy(gray, dy, dx):
+    def grid_spy(gray, dy, dx, *, include_legacy=False):
         assert gray.ndim == 2  # Luminance conversion also happens outside the loop.
+        assert include_legacy
         offsets.append((dy, dx))
-        return np.zeros((50, 37), dtype=np.uint8)
+        grid = np.zeros((50, 37), dtype=np.uint8)
+        return grid, grid
 
     monkeypatch.setattr(watermark, "bit_grid", grid_spy)
     image = np.zeros((800, 600, 3), dtype=np.uint8)
