@@ -20,7 +20,8 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0.0",
-	"ruff>=0.12.0"
+	"ruff>=0.12.0",
+	"coverage>=7.16"
 ]
 
 [tool.pytest.ini_options]
@@ -28,6 +29,9 @@ addopts = "-q"
 testpaths = ["test/"]
 pythonpath = ["src"]
 python_files = ["test_*.py"]
+
+[tool.coverage.run]
+source = ["src"]
 
 [tool.ruff]
 line-length = 88
