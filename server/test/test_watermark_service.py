@@ -19,6 +19,7 @@ def watermark(tmp_path, monkeypatch):
     engine.connect.return_value.__enter__.return_value = connection
     get_engine = Mock(return_value=engine)
     documents = Mock()
+    logger = Mock()
     source = tmp_path / "report.pdf"
     source.write_bytes(b"original")
     documents.get_document.return_value = (SimpleNamespace(name="report.pdf"), source)
@@ -30,7 +31,7 @@ def watermark(tmp_path, monkeypatch):
     for name, worker in workers.items():
         monkeypatch.setattr(f"watermark_service.WMUtils.{name}", worker)
     return SimpleNamespace(
-        service=WatermarkService(get_engine, documents),
+        service=WatermarkService(get_engine, documents, logger),
         get_engine=get_engine, documents=documents, connection=connection,
         source=source, workers=workers,
     )
@@ -139,7 +140,7 @@ def test_unknown_version_does_not_access_storage(watermark):
 
 
 def test_get_version_checks_stored_path(watermark):
-    row = SimpleNamespace(path=str(watermark.source))
+    row = SimpleNamespace(documentid = 1,id = 7, path=str(watermark.source))
     watermark.connection.execute.return_value.first.return_value = row
     watermark.documents.check_stored_file.return_value = watermark.source
     assert watermark.service.get_version("test-link") == (row, watermark.source)

@@ -11,9 +11,10 @@ from service_errors import ServiceError
 
 
 class WatermarkService:
-    def __init__(self, get_engine, documents):
+    def __init__(self, get_engine, documents,logger):
         self.get_engine = get_engine
         self.documents = documents
+        self.logger = logger
 
     def list_versions(self, owner_id, document_id):
         try:
@@ -88,9 +89,18 @@ class WatermarkService:
 
         # Don’t leak whether a doc exists for another user
         if not row:
+            self.logger.warning(
+                "watermark access: outcome=failure reason=version_not_found"
+            )
             raise ServiceError("document not found", 404)
 
-        return row, self.documents.check_stored_file(row.path)
+        checked_path = self.documents.check_stored_file(row.path)
+        self.logger.info(
+            "watermark access: version_id=%s document_id=%s outcome=success",
+            row.id,
+            row.documentid,
+        )
+        return row, checked_path
 
     def create_watermark(
         self,
@@ -110,6 +120,9 @@ class WatermarkService:
         try:
             doc_id = int(doc_id)
         except (TypeError, ValueError):
+            self.logger.warning(
+                "watermark issuance: outcome=failure reason=invalid_document_id"
+            )
             raise ServiceError("document_id (int) is required", 400)
         if (
             not method
@@ -117,6 +130,10 @@ class WatermarkService:
             or not isinstance(secret, str)
             or not isinstance(key, str)
         ):
+            self.logger.warning(
+                "watermark issuance: document_id=%s outcome=failure reason=invalid_payload",
+                doc_id,
+            )
             raise ServiceError(
                 "method, intended_for, secret, and key are required", 400
             )
@@ -129,10 +146,18 @@ class WatermarkService:
                 method=method, pdf=str(file_path), position=position
             )
             if applicable is False:
+                self.logger.warning(
+                    "watermark issuance: document_id=%s outcome=failure reason=method_not_applicable",
+                    doc_id,
+                )
                 raise ServiceError("watermarking method not applicable", 400)
         except ServiceError:
             raise
         except Exception as e:
+            self.logger.warning(
+                "watermark issuance: document_id=%s outcome=failure reason=applicability_check_failed",
+                doc_id,
+            )
             raise ServiceError(f"watermark applicability check failed: {e}", 400)
 
         # apply watermark → bytes
@@ -145,6 +170,10 @@ class WatermarkService:
                 position=position,
             )
             if not isinstance(wm_bytes, (bytes, bytearray)) or len(wm_bytes) == 0:
+                self.logger.warning(
+                    "watermark issuance: document_id=%s outcome=failure reason=no_output",
+                    doc_id,
+                )
                 raise ServiceError("watermarking produced no output", 500)
         except ServiceError:
             raise
@@ -181,6 +210,10 @@ class WatermarkService:
                 )
                 vid = int(conn.execute(text("SELECT LAST_INSERT_ID()")).scalar())
         except Exception:
+            self.logger.warning(
+                "watermark issuance: document_id=%s outcome=failure reason=database_error",
+                doc_id,
+            )
             raise ServiceError("database error", 503)
 
         try:
@@ -189,7 +222,18 @@ class WatermarkService:
         except ServiceError:
             raise
         except Exception as e:
+            self.logger.warning(
+                "watermark issuance: version_id=%s document_id=%s outcome=failure reason=file_write_failed",
+                vid,
+                doc_id,
+            )
             raise ServiceError(f"failed to write watermarked file: {e}", 500)
+
+        self.logger.info(
+            "watermark issuance: version_id=%s document_id=%s outcome=success",
+            vid,
+            doc_id,
+        )
 
         return {
             "id": vid,

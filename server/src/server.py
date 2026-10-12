@@ -55,7 +55,7 @@ def create_app() -> Flask:
     document_service = DocumentService(
         get_engine, app.config["STORAGE_DIR"], app.logger
     )
-    watermark_service = WatermarkService(get_engine, document_service)
+    watermark_service = WatermarkService(get_engine, document_service,app.logger)
     require_auth = auth.make_require_auth(auth_service)
 
     @app.errorhandler(ServiceError)
