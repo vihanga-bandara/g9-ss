@@ -213,3 +213,6 @@ __marimo__/
 /.idea/
 
 .DS_Store
+
+# Testing
+mutants/
