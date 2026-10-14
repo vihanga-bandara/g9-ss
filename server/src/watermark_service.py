@@ -129,6 +129,8 @@ class WatermarkService:
             or not intended_for
             or not isinstance(secret, str)
             or not isinstance(key, str)
+            or not secret
+            or not key
         ):
             self.logger.warning(
                 "watermark issuance: document_id=%s outcome=failure reason=invalid_payload",

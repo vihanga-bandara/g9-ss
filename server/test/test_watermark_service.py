@@ -47,7 +47,14 @@ def payload():
 
 @pytest.mark.parametrize(
     "field,value",
-    [("method", None), ("intended_for", ""), ("secret", 123), ("key", None)],
+    [
+        ("method", None),
+        ("intended_for", ""),
+        ("secret", 123),
+        ("secret", ""),
+        ("key", None),
+        ("key", ""),
+    ],
 )
 def test_invalid_create_payload_stops_before_dependencies(
     watermark, payload, field, value
