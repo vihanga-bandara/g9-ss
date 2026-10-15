@@ -53,3 +53,27 @@ def test_read_secret_tells_a_missing_watermark_from_a_wrong_key() -> None:
     marked = GhostText().add_watermark(SAMPLE_PDF, "copy-for-bob", KEY)
     with pytest.raises(InvalidKeyError):
         GhostText().read_secret(marked, "not-the-key")
+
+
+def test_read_secret_skips_a_copy_made_with_another_key() -> None:
+    decoy = GhostText().add_watermark(SAMPLE_PDF, "decoy", "attacker-key")
+    marked = GhostText().add_watermark(decoy, "copy-for-bob", KEY)
+    assert GhostText().read_secret(marked, KEY) == "copy-for-bob"
+
+
+@pytest.mark.parametrize(
+    "secret, key", [("", KEY), ("copy-for-bob", "")], ids=["no-secret", "no-key"]
+)
+def test_add_watermark_refuses_an_empty_secret_or_key(secret: str, key: str) -> None:
+    with pytest.raises(ValueError):
+        GhostText().add_watermark(SAMPLE_PDF, secret, key)
+
+
+def render_pages(pdf: bytes) -> list[bytes]:
+    with pymupdf.open(stream=pdf, filetype="pdf") as doc:
+        return [page.get_pixmap(dpi=300).samples for page in doc]
+
+
+def test_hidden_copy_leaves_every_page_looking_the_same() -> None:
+    marked = GhostText().add_watermark(SAMPLE_PDF, "copy-for-bob", KEY)
+    assert render_pages(marked) == render_pages(SAMPLE_PDF)
