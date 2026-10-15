@@ -8,27 +8,48 @@ The following instructions are meant for a bash terminal on a Linux machine. If 
 To clone the repo, you can simply run:
 
 ```bash
-git clone https://github.com/nharrand/tatou-2026.git
+git clone https://github.com/vihanga-bandara/g9-ss.git
 ```
 
-Note that you should probably fork the repo and clone your own repo.
-
-
-### Run python unit tests
+### Run the tests
 
 ```bash
-cd tatou/server
+cd g9-ss/server
 
-# Create a python virtual environement
+# Create a python virtual environment (the server needs Python 3.12)
 python3 -m venv .venv
 
-# Activate your virtual environement
+# Activate your virtual environment
 . .venv/bin/activate
 
 # Install the necessary dependencies
+python -m pip install -e ".[dev]"
 
-# Run the unit tests
+# Run the unit and API tests
 python -m pytest
+```
+
+The API tests call the routes through Flask's test client (for example `test/test_authorization.py` and `test/test_rmap.py`), so no server or database needs to be running.
+
+### Measure coverage
+
+From `server/`, with the virtual environment active:
+
+```bash
+python -m coverage run -m pytest
+python -m coverage report --show-missing
+```
+
+### Run mutation testing
+
+mutmut plants small bugs in the code and reruns the tests to see whether they notice. From `server/` (Linux or WSL only):
+
+```bash
+mutmut run "auth_service*" "document_service*" "watermark_service*" "ghost_text*" "rmap_routes*" "auth.*"
+
+# List the mutants that no test caught, then show one of them
+mutmut results
+mutmut show <name>
 ```
 
 ### Deploy
@@ -45,7 +66,7 @@ docker compose up --build -d
 docker compose logs -f
 
 # Test if the API is up
-http -v :5000/healthz
+curl -i http://127.0.0.1:5000/healthz
 
 # Open your browser at 127.0.0.1:5000 to check if the website is up.
 ```
