@@ -29,7 +29,7 @@ python -m pip install -e ".[dev]"
 python -m pytest
 ```
 
-The API tests call the routes through Flask's test client (for example `test/test_authorization.py` and `test/test_rmap.py`), so no server or database needs to be running.
+The API tests use Flask's test client, so no server or database needs to be running.
 
 ### Measure coverage
 
