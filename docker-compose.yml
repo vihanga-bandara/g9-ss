@@ -1,6 +1,13 @@
 version: "3.9"
 
 services:
+  storage-init:
+    image: alpine:3.20
+    user: "0:0"
+    volumes:
+      - user-files:/storage
+    command: [ "sh", "-c", "chown -R 10001:10001 /storage" ]
+    restart: "no"
   server:
     build:
       context: server
@@ -29,6 +36,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      storage-init:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   db:
@@ -70,3 +79,4 @@ services:
 volumes:
   db-data:
   user-files:
+
