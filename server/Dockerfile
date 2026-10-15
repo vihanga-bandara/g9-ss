@@ -14,6 +14,10 @@ RUN groupadd --gid 10001 appuser \
     && groupadd --gid 1000 rmapkeys \
     && useradd --uid 10001 --gid 10001 --groups rmapkeys --no-create-home --shell /usr/sbin/nologin appuser
 
+RUN mkdir -p /home/appuser \
+    && chown appuser:appuser /home/appuser \
+    && chmod 700 /home/appuser
+
 # Copy project description, to instal dependencies
 COPY pyproject.toml /app/pyproject.toml
 
