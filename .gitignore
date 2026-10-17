@@ -216,3 +216,7 @@ __marimo__/
 
 # Testing
 mutants/
+
+# Per-deployment compose override and the RMAP keys it mounts
+docker-compose.override.yml
+rmap_keys/
