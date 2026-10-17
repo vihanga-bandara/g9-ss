@@ -71,5 +71,27 @@ curl -i http://127.0.0.1:5000/healthz
 # Open your browser at 127.0.0.1:5000 to check if the website is up.
 ```
 
+### Create a new release
+
+Create a new version tag on main and push it:
+
+```bash
+git checkout main && git pull
+git tag -a v1.0.1 -m "Release v1.0.1"
+git push origin v1.0.1
+```
+
+The deployment system recognizes the new tag and releases that version to the server, once the tests and the Docker build have passed on it. The team gets a Discord message when a release succeeds or fails.
+
+```mermaid
+flowchart TD
+    tag[New version tag on main] --> seen[Deployment system recognizes the tag]
+    seen --> checks{Tests and Docker build passed?}
+    checks -->|yes| live[Version released to the server]
+    checks -->|no| skip[Not released]
+    live --> ok["Discord: release succeeded"]
+    skip --> fail["Discord: release failed"]
+```
+
 
 
