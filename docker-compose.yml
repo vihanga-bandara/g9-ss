@@ -16,7 +16,7 @@ services:
       - "5000:5000"
     volumes:
       - user-files:/app/storage
-      - ./keys:/app/keys:ro
+      # RMAP keys are mounted per deployment through docker-compose.override.yml (gitignored).
     environment:
       - PYTHONUNBUFFERED=1
       # DB connection details for future use by the API
