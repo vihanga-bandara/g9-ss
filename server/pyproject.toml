@@ -1,6 +1,6 @@
 [project]
 name = "Tatou-Server"
-version = "0.0.1"
+version = "1.0.0"
 description = "PDF Watermarking platform"
 requires-python = ">=3.12,<3.13"
 dependencies = [
