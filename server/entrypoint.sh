@@ -16,6 +16,8 @@ else
 fi
 
 # --- Start the server ---
+# The flag is only needed to set up /app/flag, so keep it out of the server's environment.
+unset FLAG_2
 echo "Starting server..."
 # Keep one worker: RMAP holds each handshake in memory between its two requests.
 exec gosu appuser gunicorn -b 0.0.0.0:5000 --access-logfile - server:app
